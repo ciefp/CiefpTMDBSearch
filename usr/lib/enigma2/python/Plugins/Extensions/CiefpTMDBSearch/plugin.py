@@ -483,14 +483,14 @@ class SettingsScreen(Screen):
         <screen name="SettingsScreen" position="center,center" size="1600,800" title="..:: CiefpTMDBSearch Settings ::..">
             <widget name="status" position="20,650" size="1000,40" font="Regular;26" foregroundColor="#00FF00" />
             <widget name="background" position="1000,0" size="600,800" pixmap="%s" alphatest="on" />
-            <ePixmap pixmap="buttons/red.png" position="20,720" size="35,35" alphatest="blend" />
-            <eLabel text="Cancel" position="70,710" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#800000" halign="center" valign="center" transparent="0" />
-            <ePixmap pixmap="buttons/green.png" position="270,720" size="35,35" alphatest="blend" />
-            <eLabel text="Save" position="320,710" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#008000" halign="center" valign="center" transparent="0" />
-            <ePixmap pixmap="buttons/yellow.png" position="520,720" size="35,35" alphatest="blend" />
-            <eLabel text="API Key" position="570,710" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#808000" halign="center" valign="center" transparent="0" />
-            <ePixmap pixmap="buttons/blue.png" position="770,720" size="35,35" alphatest="blend" />
-            <eLabel text="Language" position="820,710" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#000080" halign="center" valign="center" transparent="0" />
+            <ePixmap pixmap="buttons/red.png" position="0,720" size="35,35" alphatest="blend" />
+            <eLabel text="Cancel" position="50,710" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#800000" halign="center" valign="center" transparent="0" />
+            <ePixmap pixmap="buttons/green.png" position="250,720" size="35,35" alphatest="blend" />
+            <eLabel text="Save" position="300,710" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#008000" halign="center" valign="center" transparent="0" />
+            <ePixmap pixmap="buttons/yellow.png" position="500,720" size="35,35" alphatest="blend" />
+            <eLabel text="API Key" position="550,710" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#808000" halign="center" valign="center" transparent="0" />
+            <ePixmap pixmap="buttons/blue.png" position="750,720" size="35,35" alphatest="blend" />
+            <eLabel text="Language" position="800,710" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#000080" halign="center" valign="center" transparent="0" />
             <widget name="menu" position="50,50" size="900,550" scrollbarMode="showOnDemand" itemHeight="50" font="Regular;28" />
         </screen>
     """ % BACKGROUND
