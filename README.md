@@ -3,7 +3,7 @@
 
 **The most beautiful, fastest and smartest TMDB plugin for Enigma2 – ever made.**
 
-![CiefpTMDBSearch](https://raw.githubusercontent.com/ciefp/CiefpTMDBSearch/main/screenshots/main.jpg)
+![CiefpTMDBSearch](https://raw.githubusercontent.com/ciefp/CiefpTMDBSearch/main/main.jpg)
 
 Search movies and TV shows directly from your Enigma2 receiver using **The Movie Database (TMDB)** – with high-quality posters, ratings, cast, genres and full plot summary in **14 languages**!
 
@@ -42,9 +42,9 @@ Search movies and TV shows directly from your Enigma2 receiver using **The Movie
    Get your free key here: https://www.themoviedb.org/settings/api
 
 ### Screenshots
-| Main Screen | Settings | Slovak Example |
-|-------------|----------|----------------|
-| ![Main](https://raw.githubusercontent.com/ciefp/CiefpTMDBSearch/main/screenshots/main.jpg) | ![Settings](https://raw.githubusercontent.com/ciefp/CiefpTMDBSearch/main/screenshots/settings.jpg) | ![Slovak](https://raw.githubusercontent.com/ciefp/CiefpTMDBSearch/main/screenshots/slovak.jpg) |
+| Main Screen | Settings | Series Example | Movies Example |
+|-------------|----------|----------------|----------------|
+| ![Main](https://raw.githubusercontent.com/ciefp/CiefpTMDBSearch/main/main.jpg) | ![Settings](https://raw.githubusercontent.com/ciefp/CiefpTMDBSearch/main/settings.jpg) | ![Series](https://raw.githubusercontent.com/ciefp/CiefpTMDBSearch/main/series.jpg) |![Movies](https://raw.githubusercontent.com/ciefp/CiefpTMDBSearch/main/movies.jpg) |
 
 ### Requirements
 - Enigma2 image (Python 2.7)
