@@ -8,6 +8,7 @@ import ssl
 import urllib.request
 import urllib.parse
 import threading
+import time
 from io import BytesIO
 
 # Enigma2 imports
@@ -21,7 +22,7 @@ from Plugins.Plugin import PluginDescriptor
 from Screens.Screen import Screen
 from Screens.VirtualKeyBoard import VirtualKeyBoard
 from Screens.MessageBox import MessageBox
-from enigma import eTimer
+from enigma import eTimer, eServiceCenter, iServiceInformation, eEPGCache
 from Tools.LoadPixmap import LoadPixmap
 
 # ---------- CONFIG ----------
@@ -43,18 +44,19 @@ config.plugins.ciefptmdb.language = ConfigSelection(default="en-US", choices=[
     ("es-ES", "Español"),
     ("fr-FR", "Français"),
     ("it-IT", "Italiano"),
-    ("ru-RBRO", "Русский"),
+    ("ru-RU", "Русский"),
     ("pt-BR", "Português"),
     ("pl-PL", "Polski"),
     ("tr-TR", "Türkçe"),
     ("ar-AE", "العربية"),
     ("zh-CN", "中文")
 ])
+config.plugins.ciefptmdb.auto_search_epg = ConfigYesNo(default=True)
 
 # plugin dir and files
 PLUGIN_NAME = "CiefpTMDBSearch"
 PLUGIN_DESC = "TMDB search for movies and series with poster, rating, actors and description"
-PLUGIN_VERSION = "1.0"
+PLUGIN_VERSION = "1.2"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else "/usr/lib/enigma2/python/Plugins/Extensions/CiefpTMDBSearch"
 API_KEY_FILE = os.path.join(PLUGIN_DIR, "tmdbapikey.txt")
 BACKGROUND = os.path.join(PLUGIN_DIR, "background.png")
@@ -91,12 +93,13 @@ def ensure_cache_folder():
 ensure_cache_folder()
 load_api_key_from_file()
 
-# ---------- TMDB helpers (same logic kao pre) ----------
+# ---------- TMDB helpers ----------
 def _search_tmdb_movie(title, year=None, api_key=None):
     if not api_key:
         return None, None
     try:
-        params = {"api_key": api_key, "query": title}
+        language = config.plugins.ciefptmdb.language.value
+        params = {"api_key": api_key, "query": title, "language": language}
         if year:
             params["year"] = year
         url = "https://api.themoviedb.org/3/search/movie?" + urllib.parse.urlencode(params)
@@ -107,14 +110,16 @@ def _search_tmdb_movie(title, year=None, api_key=None):
             data = json.loads(resp.read().decode("utf-8", errors="ignore"))
         results = data.get("results", [])
         return (results[0], "movie") if results else (None, None)
-    except Exception:
+    except Exception as e:
+        print(f"[TMDB] Movie search error: {e}")
         return None, None
 
 def _search_tmdb_tv(title, year=None, api_key=None):
     if not api_key:
         return None, None
     try:
-        params = {"api_key": api_key, "query": title}
+        language = config.plugins.ciefptmdb.language.value
+        params = {"api_key": api_key, "query": title, "language": language}
         if year:
             params["first_air_date_year"] = year
         url = "https://api.themoviedb.org/3/search/tv?" + urllib.parse.urlencode(params)
@@ -125,7 +130,8 @@ def _search_tmdb_tv(title, year=None, api_key=None):
             data = json.loads(resp.read().decode("utf-8", errors="ignore"))
         results = data.get("results", [])
         return (results[0], "tv") if results else (None, None)
-    except Exception:
+    except Exception as e:
+        print(f"[TMDB] TV search error: {e}")
         return None, None
         
 def _get_media_details(media_id, media_type, api_key):
@@ -137,8 +143,9 @@ def _get_media_details(media_id, media_type, api_key):
         ctx.verify_mode = ssl.CERT_NONE
         with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
             return json.loads(resp.read().decode("utf-8", errors="ignore"))
-    except:
-        return None        
+    except Exception as e:
+        print(f"[TMDB] Details error: {e}")
+        return None
 
 def download_poster_async(poster_path, media_id, media_type, callback):
     if not poster_path or not media_id:
@@ -164,7 +171,8 @@ def download_poster_async(poster_path, media_id, media_type, callback):
             with open(fname, "wb") as f:
                 f.write(data)
             callback(fname)
-        except Exception:
+        except Exception as e:
+            print(f"[TMDB] Poster download error: {e}")
             callback(None)
     thread = threading.Thread(target=download_thread, daemon=True)
     thread.start()
@@ -209,6 +217,134 @@ def get_cache_info():
     except Exception:
         return 0, 0.0
 
+def get_current_epg_event():
+    """Get current EPG event info from playing service - IMPROVED VERSION"""
+    try:
+        from Screens.InfoBar import InfoBar
+        infoBar = InfoBar.instance
+        if not infoBar:
+            return None
+            
+        service_ref = infoBar.session.nav.getCurrentlyPlayingServiceReference()
+        if not service_ref:
+            return None
+            
+        service_handler = eServiceCenter.getInstance()
+        info = service_handler.info(service_ref)
+        if not info:
+            return None
+            
+        epgcache = eEPGCache.getInstance()
+        if not epgcache:
+            return None
+            
+        # Get current event using multiple methods
+        now = int(time.time())
+        event = None
+        
+        # Method 1: Direct lookup
+        try:
+            event_id = epgcache.lookupEventId(service_ref, -1, 0)
+            if event_id:
+                event = epgcache.lookupEventId(event_id)
+        except:
+            pass
+            
+        # Method 2: Time-based lookup
+        if not event:
+            try:
+                event = epgcache.lookupEventTime(service_ref, now, 0)
+            except:
+                pass
+                
+        # Method 3: Alternative lookup
+        if not event:
+            try:
+                events = epgcache.lookupEvent(['IBDCT', (service_ref.toString(), 0, -1, -1)])
+                if events:
+                    for ev in events:
+                        start_time = ev[1]
+                        duration = ev[2]
+                        if start_time <= now < (start_time + duration):
+                            # Create a mock event object
+                            class MockEvent:
+                                def __init__(self, event_data):
+                                    self.event_data = event_data
+                                def getEventName(self):
+                                    return self.event_data[3] if len(self.event_data) > 3 else ""
+                                def getShortDescription(self):
+                                    return self.event_data[4] if len(self.event_data) > 4 else ""
+                                def getExtendedDescription(self):
+                                    return self.event_data[5] if len(self.event_data) > 5 else ""
+                            event = MockEvent(ev)
+                            break
+            except Exception as e:
+                print(f"[EPG] Alternative lookup error: {e}")
+        
+        if event:
+            event_name = event.getEventName()
+            event_description = event.getShortDescription() or event.getExtendedDescription()
+            
+            # Enhanced year extraction
+            year = None
+            search_text = ""
+            if event_description:
+                search_text += event_description + " "
+            if event_name:
+                search_text += event_name
+                
+            # Look for year in various formats
+            year_patterns = [
+                r'\b(19|20)\d{2}\b',  # 1999, 2020
+                r'\((\d{4})\)',        # (1999)
+                r'\s(\d{4})\s',        # space 1999 space
+            ]
+            
+            for pattern in year_patterns:
+                year_match = re.search(pattern, search_text)
+                if year_match:
+                    year = year_match.group(1) if year_match.groups() else year_match.group()
+                    break
+            
+            return {
+                'title': event_name,
+                'description': event_description,
+                'year': year
+            }
+            
+    except Exception as e:
+        print(f"[EPG] General error getting EPG: {e}")
+        
+    return None
+
+def clean_title_for_search(title):
+    """Clean and prepare title for TMDB search"""
+    if not title:
+        return ""
+    
+    # Remove common prefixes and suffixes
+    patterns_to_remove = [
+        r'^\[.*?\]\s*',  # [HD], [4K], etc.
+        r'^\(.*?\)\s*',  # (2018), etc.
+        r'\s*\[.*?\]$',  # [HD] at end
+        r'\s*\(.*?\)$',  # (2018) at end
+        r'^Film:\s*',    # Film: prefix
+        r'^Movie:\s*',   # Movie: prefix
+        r'^TV\s*',       # TV prefix
+        r'\s*–.*$',      # – description
+        r'\s*\-.*$',     # - description
+        r'\s*:.*$',      # : description
+    ]
+    
+    cleaned_title = title
+    for pattern in patterns_to_remove:
+        cleaned_title = re.sub(pattern, '', cleaned_title)
+    
+    # Remove extra spaces
+    cleaned_title = re.sub(r'\s+', ' ', cleaned_title).strip()
+    
+    return cleaned_title
+
 # ---------- MAIN SEARCH SCREEN ----------
 class CiefpTMDBMain(Screen):
     skin = """
@@ -221,34 +357,37 @@ class CiefpTMDBMain(Screen):
             <!-- RED: Exit -->
             <ePixmap pixmap="buttons/red.png" position="50,820" size="35,35" alphatest="blend" />
             <eLabel text="Exit" position="100,810" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#800000" halign="center" valign="center" transparent="0" />
-            <!-- GREEN: Placeholder for future -->
+            <!-- GREEN: Search Movies -->
             <ePixmap pixmap="buttons/green.png" position="300,820" size="35,35" alphatest="blend" />
             <eLabel text="Search Movies" position="350,810" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#008000" halign="center" valign="center" transparent="0" />
-            <!-- YELLOW: Search -->
+            <!-- YELLOW: Search Series -->
             <ePixmap pixmap="buttons/yellow.png" position="550,820" size="35,35" alphatest="blend" />
             <eLabel text="Search Series" position="600,810" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#808000" halign="center" valign="center" transparent="0" />
-            <!-- BLUE: Settings -->
+            <!-- BLUE: Auto EPG Search -->
             <ePixmap pixmap="buttons/blue.png" position="800,820" size="35,35" alphatest="blend" />
-            <eLabel text="Settings" position="850,810" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#000080" halign="center" valign="center" transparent="0" />
+            <eLabel text="Auto EPG Search" position="850,810" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#000080" halign="center" valign="center" transparent="0" />
+            <!-- MENU: Settings -->
+            <eLabel text="MENU: Settings" position="1100,770" size="500,30" font="Regular;22" foregroundColor="#CCCCCC" halign="left" />
         </screen>
-    """ .format(version=PLUGIN_VERSION)
+    """.format(version=PLUGIN_VERSION)
 
     def __init__(self, session):
         Screen.__init__(self, session)
         self.session = session
 
-        self["left_text"] = Label("CiefpTMDBSearch\n\nPress GREEN to search for movies.\nPress YELLOW to search for series.")
+        self["left_text"] = Label("CiefpTMDBSearch v{}\n\nPress GREEN to search for movies.\nPress YELLOW to search for series.\nPress BLUE for Auto EPG Search.\nPress MENU for Settings.".format(PLUGIN_VERSION))
         self["poster"] = Pixmap()
         self["status"] = Label("Ready")
 
-        # simple action map (create once)
-        self["actions"] = ActionMap(["OkCancelActions", "ColorActions"],
+        # Extended action map
+        self["actions"] = ActionMap(["OkCancelActions", "ColorActions", "MenuActions"],
         {
             "cancel": self.close,
             "red": self.close,
             "green": self.search_movies,
             "yellow": self.search_series,
-            "blue": self.open_settings
+            "blue": self.auto_epg_search,
+            "menu": self.open_settings
         }, -1)
 
         # Timer for poster download timeout
@@ -263,25 +402,83 @@ class CiefpTMDBMain(Screen):
 
         # show placeholder on start
         self.onLayoutFinish.append(self._show_placeholder)
-
-
         self.onClose.append(self.__onClose)
 
     def _show_placeholder(self):
-        print("[DEBUG] Trying to load placeholder:", PLACEHOLDER, os.path.exists(PLACEHOLDER))
         px = load_pixmap_safe(PLACEHOLDER)
-        print("[DEBUG] Pixmap loaded:", px is not None)
         if px and self["poster"] and hasattr(self["poster"], "instance") and self["poster"].instance:
             try:
                 self["poster"].instance.setPixmap(px)
-                print("[DEBUG] Placeholder set successfully.")
-            except Exception as e:
-                print("[DEBUG] Failed to set pixmap:", e)
-        else:
-            print("[DEBUG] Poster instance not ready or pixmap missing.")
+            except Exception:
+                pass
 
     def open_settings(self):
         self.session.open(SettingsScreen)
+
+    def auto_epg_search(self):
+        """Auto search from current EPG event - IMPROVED VERSION"""
+        self["status"].setText("Getting EPG info...")
+        
+        epg_info = get_current_epg_event()
+        if not epg_info or not epg_info.get('title'):
+            self["status"].setText("No EPG event found!")
+            self["left_text"].setText("No current EPG event found!\n\nPlease tune to a channel with EPG data and try again.\n\nMake sure:\n1. You are watching a TV channel\n2. The channel has EPG information\n3. There is a current program playing")
+            self._show_placeholder()
+            return
+        
+        original_title = epg_info['title']
+        cleaned_title = clean_title_for_search(original_title)
+        year = epg_info.get('year')
+        description = epg_info.get('description', '')
+        
+        if not cleaned_title:
+            self["status"].setText("No valid title found!")
+            self["left_text"].setText(f"Could not extract valid title from EPG:\n{original_title}")
+            self._show_placeholder()
+            return
+        
+        search_text = f"EPG Event: {cleaned_title}"
+        if year:
+            search_text += f" ({year})"
+        
+        self["left_text"].setText(f"Found EPG event:\nOriginal: {original_title}\nCleaned: {cleaned_title}" + (f" ({year})" if year else "") + f"\n\nSearching in TMDB...")
+        self["status"].setText("Searching TMDB...")
+        
+        # Try both movie and TV search
+        api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
+        if not api_key:
+            self["left_text"].setText("TMDB API key not set!\nOpen Settings (MENU) to set API key.")
+            self["status"].setText("Error: API key")
+            self._show_placeholder()
+            return
+        
+        # First try movie search
+        match, media_type = _search_tmdb_movie(cleaned_title, year, api_key)
+        if not match:
+            # If movie not found, try TV search
+            match, media_type = _search_tmdb_tv(cleaned_title, year, api_key)
+        
+        if match and media_type:
+            self.media_id = match.get("id")
+            self.media_type = media_type
+            self.poster_path = match.get("poster_path")
+            self._display_media_details(match, media_type, api_key, epg_info)
+        else:
+            # Try without year if search with year failed
+            if year:
+                match, media_type = _search_tmdb_movie(cleaned_title, None, api_key)
+                if not match:
+                    match, media_type = _search_tmdb_tv(cleaned_title, None, api_key)
+            
+            if match and media_type:
+                self.media_id = match.get("id")
+                self.media_type = media_type
+                self.poster_path = match.get("poster_path")
+                self._display_media_details(match, media_type, api_key, epg_info)
+            else:
+                self["left_text"].setText(f"No TMDB results for EPG event:\nOriginal: {original_title}\nCleaned: {cleaned_title}" + (f" ({year})" if year else "") + f"\n\nDescription:\n{description}")
+                self["status"].setText("No results found")
+                self._show_placeholder()
 
     def search_movies(self):
         def callback(text):
@@ -313,11 +510,11 @@ class CiefpTMDBMain(Screen):
     def tmdb_search(self, query, mode):
         api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
         if not api_key:
-            self["left_text"].setText("TMDB API key not set!\nOpen Settings (BLUE) to set API key.")
+            self["left_text"].setText("TMDB API key not set!\nOpen Settings (MENU) to set API key.")
             self["status"].setText("Error: API key")
             return
 
-        # Pretraga
+        # Search
         if mode == "movie":
             match, media_type = _search_tmdb_movie(query, None, api_key)
         else:
@@ -332,8 +529,10 @@ class CiefpTMDBMain(Screen):
         self.media_id = match.get("id")
         self.media_type = media_type
         self.poster_path = match.get("poster_path")
+        self._display_media_details(match, media_type, api_key)
 
-        # Detalji
+    def _display_media_details(self, match, media_type, api_key, epg_info=None):
+        """Display media details - improved version"""
         details = _get_media_details(self.media_id, self.media_type, api_key)
         if not details:
             self["left_text"].setText("Failed to fetch details from TMDB.")
@@ -341,10 +540,17 @@ class CiefpTMDBMain(Screen):
             self._show_placeholder()
             return
 
-        # ==================== PRIKUPLJANJE PODATAKA ====================
+        # ==================== COLLECT DATA ====================
         display_lines = []
 
-        # Naslov i godina
+        # Add EPG info if available
+        if epg_info:
+            display_lines.append(f"EPG Title: {epg_info.get('title', 'N/A')}")
+            if epg_info.get('year'):
+                display_lines.append(f"EPG Year: {epg_info['year']}")
+            display_lines.append("")
+
+        # Title and year
         if media_type == "movie":
             title = details.get("title", "N/A")
             original_title = details.get("original_title", "")
@@ -355,34 +561,31 @@ class CiefpTMDBMain(Screen):
             title = details.get("name", "N/A")
             original_title = details.get("original_name", "")
             year = details.get("first_air_date", "")[:4] if details.get("first_air_date") else "N/A"
-            # Za serije uzimamo prosečno trajanje epizode
             duration = details.get("episode_run_time")
             if duration and isinstance(duration, list) and duration:
                 duration = f"~{duration[0]} min/ep"
             else:
                 duration = "N/A"
 
-        # Originalni naslov ako je različit
+        # Original title if different
+        display_lines.append(f"Title: {title}")
         if original_title and original_title != title:
-            display_lines.append(f"{title}")
             display_lines.append(f"Original: {original_title}")
-        else:
-            display_lines.append(f"{title}")
 
         display_lines.append(f"Year: {year}")
         display_lines.append(f"Duration: {duration}")
 
-        # Ocena
+        # Rating
         vote = details.get("vote_average", 0)
         if vote:
             display_lines.append(f"Rating: {vote:.1f}/10 ★")
 
-        # Žanrovi
+        # Genres
         genres = [g["name"] for g in details.get("genres", [])]
         if genres:
             display_lines.append(f"Genres: {', '.join(genres)}")
 
-        # Režiser (samo za filmove) ili kreator (za serije)
+        # Director (movies) or creator (TV)
         credits = details.get("credits", {})
         if media_type == "movie":
             directors = [c["name"] for c in credits.get("crew", []) if c["job"] == "Director"]
@@ -394,7 +597,7 @@ class CiefpTMDBMain(Screen):
             if creators:
                 display_lines.append(f"Created by: {', '.join(creators[:3])}")
 
-        # Opis
+        # Description
         overview = details.get("overview", "").strip()
         if overview:
             overview = overview.replace("\r\n", " ").replace("\n", " ")
@@ -404,8 +607,7 @@ class CiefpTMDBMain(Screen):
             display_lines.append("Plot:")
             display_lines.append(overview)
 
-        # Glumci (prvih 5)
-        # Glumci (prvih 5 kao na TMDB stranici)
+        # Cast (first 5)
         cast = credits.get("cast", [])[:5]
         if cast:
             display_lines.append("")
@@ -418,17 +620,17 @@ class CiefpTMDBMain(Screen):
                 else:
                     display_lines.append(f"  • {name}")
                     
-        # Prazan red na kraju za lepši izgled
+        # Empty line at the end for better appearance
         display_lines.append("")
 
-        # ==================== PRIKAZ ====================
+        # ==================== DISPLAY ====================
         self["left_text"].setText("\n".join(display_lines))
 
         # ==================== POSTER ====================
         if self.poster_path and config.plugins.ciefptmdb.cache_enabled.value:
             self["status"].setText("Downloading poster...")
             self.download_in_progress = True
-            self.download_timer.start(12000, True)  # 12 sekundi timeout
+            self.download_timer.start(12000, True)  # 12 seconds timeout
 
             folder = ensure_cache_folder()
             fname = (f"movie_{self.media_id}_" if media_type == "movie" else f"tv_{self.media_id}_") + os.path.basename(self.poster_path or "none.jpg")
@@ -477,7 +679,7 @@ class CiefpTMDBMain(Screen):
             pass
         Screen.close(self)
 
-# ---------- SETTINGS SCREEN (re-used, minimal changes) ----------
+# ---------- SETTINGS SCREEN ----------
 class SettingsScreen(Screen):
     skin = """
         <screen name="SettingsScreen" position="center,center" size="1600,800" title="..:: CiefpTMDBSearch Settings ::..">
@@ -522,18 +724,19 @@ class SettingsScreen(Screen):
                 del self["actions"]
         except:
             pass
+
     def buildMenu(self):
         self.menu_list = []
 
         api_status = "✓ SET" if config.plugins.ciefptmdb.tmdb_api_key.value else "✗ NOT SET"
         self.menu_list.append(f"TMDB API Key: {api_status}")
 
-        self.menu_list.append("Cache folder: /tmp/CiefpTMDBSearch/")
+        self.menu_list.append(f"Cache folder: {config.plugins.ciefptmdb.cache_folder.value}")
 
         poster_status = "YES" if config.plugins.ciefptmdb.cache_enabled.value else "NO"
         self.menu_list.append(f"Download Posters:  {poster_status}")
 
-        # JEZIK – hardkodovano, nikad više greške
+        # LANGUAGE
         lang_names = {
             "en-US": "English",
             "sr-RS": "Srpski",
@@ -563,27 +766,14 @@ class SettingsScreen(Screen):
     def keyOk(self):
         idx = self["menu"].getSelectedIndex()
 
-        if idx == 2:  # Preuzimanje postera
+        if idx == 2:  # Download posters
             config.plugins.ciefptmdb.cache_enabled.value = not config.plugins.ciefptmdb.cache_enabled.value
             self.buildMenu()
 
         elif idx == 3:
-            choices = config.plugins.ciefptmdb.language.choices
-            current = config.plugins.ciefptmdb.language.value
+            self.change_language()
 
-            # Pronađi trenutni indeks
-            for i, (code, name) in enumerate(choices):
-                if code == current:
-                    next_i = (i + 1) % len(choices)
-                    next_code, next_name = choices[next_i]
-                    config.plugins.ciefptmdb.language.value = next_code
-                    config.plugins.ciefptmdb.language.save()
-                    configfile.save()  # OBAVEZNO!
-                    self["status"].setText(f"Jezik → {next_name}")
-                    self.buildMenu()  # Odmah osveži prikaz
-                    return
-
-        elif idx == 4:  # Brisanje keša
+        elif idx == 4:  # Clear cache
             self.clearCache()
 
     def change_language(self):
@@ -613,7 +803,7 @@ class SettingsScreen(Screen):
             "tr-TR": "Türkçe",   "ar-AE": "العربية",     "zh-CN": "中文"
         }
 
-        self["status"].setText(f"Jezik → {pretty_names[next_code]}")
+        self["status"].setText(f"Language → {pretty_names[next_code]}")
         self.buildMenu()
 
     def editApiKey(self):
@@ -637,7 +827,7 @@ class SettingsScreen(Screen):
             if result:
                 deleted_count, freed_size = clear_all_posters()
                 if deleted_count > 0:
-                    self["status"].setText(f"Deleted {deleted_count} posters ({freed_size:.1f} MB)")
+                    self["status"].setText(f"Deleted {poster_count} posters ({freed_size:.1f} MB)")
                     self.buildMenu()
                 else:
                     self["status"].setText("No posters found to delete")
@@ -651,9 +841,9 @@ class SettingsScreen(Screen):
             config.plugins.ciefptmdb.cache_enabled.save()
             config.plugins.ciefptmdb.language.save()
             configfile.save()
-            self["status"].setText("Sve sačuvano!")
+            self["status"].setText("All settings saved!")
         except Exception as e:
-            self["status"].setText(f"Greška: {e}")
+            self["status"].setText(f"Error: {e}")
 
     def keyCancel(self):
         self["status"].setText("Cancelled")
@@ -680,5 +870,4 @@ def Plugins(**kwargs):
         where=PluginDescriptor.WHERE_PLUGINMENU,
         icon=PLUGIN_ICON,
         fnc=main
-    )]    
-    
+    )]
