@@ -518,7 +518,7 @@ class CiefpTMDBMain(Screen):
                     self.session.openWithCallback(self.start_update, MessageBox,
                         f"New version: v{remote_version}\nInstall now?", MessageBox.TYPE_YESNO)
                 else:
-                    self["status"].setText("Plugin je ažuran")
+                    self["status"].setText("The plugin is up to date.")
             except Exception as e:
                 self["status"].setText("Version check failed.")
         else:
