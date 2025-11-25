@@ -421,7 +421,7 @@ class CiefpTMDBMain(Screen):
             <widget name="poster" position="1300,100" size="500,750" alphatest="blend" zPosition="2"/>
             
             <!-- Status -->
-            <widget name="status" position="1350,920" size="200,50" font="Regular;26" foregroundColor="#00FF00" halign="left" />
+            <widget name="status" position="1350,920" size="400,50" font="Regular;26" foregroundColor="#00FF00" halign="left" />
 
             <!-- Buttons (as before) -->
             <ePixmap pixmap="buttons/red.png" position="50,920" size="35,35" alphatest="blend" />
