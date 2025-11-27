@@ -22,12 +22,13 @@ from Plugins.Plugin import PluginDescriptor
 from Screens.Screen import Screen
 from Screens.VirtualKeyBoard import VirtualKeyBoard
 from Screens.MessageBox import MessageBox
-from enigma import eTimer, eServiceCenter, iServiceInformation, eEPGCache, eConsoleAppContainer
+from enigma import eTimer, eServiceCenter, iServiceInformation, eEPGCache, eConsoleAppContainer, eSize, ePoint
 from Tools.LoadPixmap import LoadPixmap
 
 # ---------- CONFIG ----------
 config.plugins.ciefptmdb = ConfigSubsection()
 config.plugins.ciefptmdb.tmdb_api_key = ConfigText(default="", fixed_size=False)
+config.plugins.ciefptmdb.omdb_api_key = ConfigText(default="", fixed_size=False)  # DODAJEMO OMDb API KEY
 config.plugins.ciefptmdb.cache_folder = ConfigSelection(default="/tmp/CiefpTMDBSearch/", choices=[
     ("/tmp/CiefpTMDBSearch/", "/tmp/CiefpTMDBSearch/"),
     ("/media/hdd/CiefpTMDBSearch/", "/media/hdd/CiefpTMDBSearch/"),
@@ -52,16 +53,19 @@ config.plugins.ciefptmdb.language = ConfigSelection(default="en-US", choices=[
     ("zh-CN", "中文")
 ])
 config.plugins.ciefptmdb.auto_search_epg = ConfigYesNo(default=True)
+config.plugins.ciefptmdb.show_imdb_rating = ConfigYesNo(default=True)  # DODAJEMO opciju za IMDB rating
 
 # plugin dir and files
 PLUGIN_NAME = "CiefpTMDBSearch"
 PLUGIN_DESC = "TMDB search for movies and series with poster, rating, actors and description"
-PLUGIN_VERSION = "1.3"
+PLUGIN_VERSION = "1.4"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else "/usr/lib/enigma2/python/Plugins/Extensions/CiefpTMDBSearch"
 API_KEY_FILE = os.path.join(PLUGIN_DIR, "tmdbapikey.txt")
+OMDB_API_KEY_FILE = os.path.join(PLUGIN_DIR, "omdbapikey.txt")  # DODAJEMO OMDb API fajl
 BACKGROUND = os.path.join(PLUGIN_DIR, "background.png")
 PLACEHOLDER = os.path.join(PLUGIN_DIR, "placeholder.png")
 PLUGIN_ICON = os.path.join(PLUGIN_DIR, "plugin.png")
+BACKGROUND_SETTINGS = os.path.join(PLUGIN_DIR, "background_settings.png")
 
 VERSION_URL = "https://raw.githubusercontent.com/ciefp/CiefpTMDBSearch/main/version.txt"
 UPDATE_COMMAND = "wget -q --no-check-certificate https://raw.githubusercontent.com/ciefp/CiefpTMDBSearch/main/installer.sh -O - | /bin/sh"
@@ -78,12 +82,31 @@ def load_api_key_from_file():
         except Exception:
             pass
 
+def load_omdb_api_key_from_file():
+    if os.path.exists(OMDB_API_KEY_FILE):
+        try:
+            with open(OMDB_API_KEY_FILE, "r", encoding="utf-8") as f:
+                key = f.read().strip()
+                if key:
+                    config.plugins.ciefptmdb.omdb_api_key.value = key
+                    config.plugins.ciefptmdb.omdb_api_key.save()
+        except Exception:
+            pass
+
 def save_api_key_to_file():
     try:
         with open(API_KEY_FILE, "w", encoding="utf-8") as f:
             f.write(config.plugins.ciefptmdb.tmdb_api_key.value.strip())
     except Exception:
         pass
+
+def save_omdb_api_key_to_file():
+    try:
+        with open(OMDB_API_KEY_FILE, "w", encoding="utf-8") as f:
+            f.write(config.plugins.ciefptmdb.omdb_api_key.value.strip())
+    except Exception:
+        pass
+
 # ---------- EPG Helpers ----------
 def get_current_service():
     """Vraća trenutni servis (ref) koji se gleda – radi na svim modernim Enigma2 verzijama"""
@@ -156,6 +179,7 @@ def ensure_cache_folder():
 
 ensure_cache_folder()
 load_api_key_from_file()
+load_omdb_api_key_from_file()  # UČITAJ OMDb API KEY
 
 # ---------- TMDB helpers ----------
 def _search_tmdb_movie(title, year=None, api_key=None):
@@ -249,6 +273,65 @@ def _get_media_details(media_id, media_type, api_key):
         print(f"[TMDB] Details error: {e}")
         return None
 
+# ---------- OMDb helpers ----------
+def _search_omdb(title, year=None, api_key=None):
+    if not api_key:
+        return None
+    try:
+        params = {"apikey": api_key, "t": title, "r": "json"}
+        if year:
+            params["y"] = year
+            
+        url = "http://www.omdbapi.com/?" + urllib.parse.urlencode(params)
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        with urllib.request.urlopen(url, context=ctx, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        
+        # Proveri da li je odgovor uspešan
+        if data.get("Response") == "True":
+            return data
+        return None
+    except Exception as e:
+        print(f"[OMDb] Search error: {e}")
+        return None
+
+def get_imdb_rating(media_info, media_type, api_key):
+    """Dobija IMDB ocenu za film/seriju"""
+    if not api_key:
+        return None
+        
+    title = media_info.get("title") if media_type == "movie" else media_info.get("name")
+    year = media_info.get("release_date", "")[:4] if media_type == "movie" else media_info.get("first_air_date", "")[:4]
+    
+    if not title:
+        return None
+        
+    # Prvo pokušaj sa IMDB ID ako ga imamo
+    imdb_id = media_info.get("imdb_id")
+    if imdb_id:
+        try:
+            params = {"apikey": api_key, "i": imdb_id, "r": "json"}
+            url = "http://www.omdbapi.com/?" + urllib.parse.urlencode(params)
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            with urllib.request.urlopen(url, context=ctx, timeout=8) as resp:
+                data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+            
+            if data.get("Response") == "True" and data.get("imdbRating") not in ["N/A", ""]:
+                return data.get("imdbRating")
+        except Exception:
+            pass
+    
+    # Fallback na pretragu po naslovu
+    omdb_data = _search_omdb(title, year, api_key)
+    if omdb_data and omdb_data.get("imdbRating") not in ["N/A", ""]:
+        return omdb_data.get("imdbRating")
+    
+    return None
+
 def download_poster_async(poster_path, media_id, media_type, callback):
     if not poster_path or not media_id:
         callback(None)
@@ -319,59 +402,6 @@ def get_cache_info():
     except Exception:
         return 0, 0.0
 
-def get_current_epg_event():
-    service = get_current_service()
-    if not service:
-        return None
-
-    epg = eEPGCache.getInstance()
-    event = epg.lookupEventTime(service, -1, 0)  # Current event
-    if not event:
-        return None
-
-    # Handle tuple or dict (common in newer Enigma2)
-    if isinstance(event, tuple):
-        # Standard tuple: (start_time, duration, name, short_desc, ext_desc, id)
-        if len(event) < 6:
-            return None
-        return {
-            'name': event[2] or '',
-            'short': event[3] or '',
-            'ext': event[4] or '',
-            'start': event[0],
-            'duration': event[1],
-            'id': event[5]
-        }
-    elif isinstance(event, dict):
-        # Already dict - normalize keys if needed
-        return {
-            'name': event.get('name', '') or event.get('title', ''),
-            'short': event.get('short', '') or event.get('short_description', ''),
-            'ext': event.get('ext', '') or event.get('extended_description', '') or event.get('description', ''),
-            'start': event.get('begin', 0) or event.get('start_time', 0),
-            'duration': event.get('duration', 0),
-            'id': event.get('id', 0) or event.get('event_id', 0)
-        }
-    else:
-        # If it's old object style (rare now), fallback
-        try:
-            return {
-                'name': event.getEventName() or '',
-                'short': event.getShortDescription() or '',
-                'ext': event.getExtendedDescription() or '',
-                'start': event.getBeginTime(),
-                'duration': event.getDuration(),
-                'id': event.getEventId()
-            }
-        except:
-            print("[TMDB] Unknown event type!")
-            return None
-
-def clean_title_for_search(title):
-    """Clean and prepare title for TMDB search"""
-    if not title:
-        return ""
-    
     # Remove common prefixes and suffixes
     patterns_to_remove = [
         r'^\[.*?\]\s*',  # [HD], [4K], etc.
@@ -394,6 +424,7 @@ def clean_title_for_search(title):
     cleaned_title = re.sub(r'\s+', ' ', cleaned_title).strip()
     
     return cleaned_title
+    
 
 # ---------- MAIN SEARCH SCREEN ----------
 class CiefpTMDBMain(Screen):
@@ -408,32 +439,38 @@ class CiefpTMDBMain(Screen):
             <!-- Duration, Rating, Genres, Director -->
             <widget name="duration" position="50,160" size="1200,40" font="Regular;30" foregroundColor="lightgrey" backgroundColor="background" transparent="1"/>
             <widget name="rating" position="50,200" size="1200,40" font="Regular;30" foregroundColor="green" backgroundColor="background" transparent="1"/>
-            <widget name="genres" position="50,240" size="1200,40" font="Regular;30" foregroundColor="blue" backgroundColor="background" transparent="1"/>
-            <widget name="director" position="50,280" size="1200,40" font="Regular;30" foregroundColor="orange" backgroundColor="background" transparent="1"/>
+            <widget name="imdb_rating" position="50,240" size="1200,40" font="Regular;30" foregroundColor="#F5C518" backgroundColor="background" transparent="1"/>
+            <widget name="genres" position="50,280" size="1200,40" font="Regular;30" foregroundColor="blue" backgroundColor="background" transparent="1"/>
+            <widget name="director" position="50,320" size="1200,40" font="Regular;30" foregroundColor="orange" backgroundColor="background" transparent="1"/>
 
             <!-- Plot -->
-            <widget name="plot" position="50,330" size="1200,300" font="Regular;28" foregroundColor="white" backgroundColor="background" transparent="1" valign="top"/>
+            <widget name="plot" position="50,370" size="1200,300" font="Regular;28" foregroundColor="white" backgroundColor="background" transparent="1" valign="top"/>
 
             <!-- Cast -->
-            <widget name="cast" position="50,640" size="1200,250" font="Regular;26" foregroundColor="cyan" backgroundColor="background" transparent="1" valign="top"/>
+            <widget name="cast" position="50,680" size="1200,250" font="Regular;26" foregroundColor="cyan" backgroundColor="background" transparent="1" valign="top"/>
 
             <!-- Poster -->
             <widget name="poster" position="1300,100" size="500,750" alphatest="blend" zPosition="2"/>
             
+            <!-- Backdrop - DODAJTE OVO -->
+            <widget name="backdrop" position="50,100" size="1200,720" zPosition="1" alphatest="blend" />
+    
             <!-- Status -->
-            <widget name="status" position="1350,920" size="400,50" font="Regular;26" foregroundColor="#00FF00" halign="left" />
-
-            <!-- Buttons (as before) -->
-            <ePixmap pixmap="buttons/red.png" position="50,920" size="35,35" alphatest="blend" />
-            <eLabel text="Exit" position="100,910" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#800000" halign="center" valign="center" transparent="0" />
-            <ePixmap pixmap="buttons/green.png" position="300,920" size="35,35" alphatest="blend" />
-            <eLabel text="Search Movies" position="350,910" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#008000" halign="center" valign="center" transparent="0" />
-            <ePixmap pixmap="buttons/yellow.png" position="550,920" size="35,35" alphatest="blend" />
-            <eLabel text="Search Series" position="600,910" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#808000" halign="center" valign="center" transparent="0" />
-            <ePixmap pixmap="buttons/blue.png" position="800,920" size="35,35" alphatest="blend" />
-            <eLabel text="Auto EPG Search" position="850,910" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#000080" halign="center" valign="center" transparent="0" />
-            <ePixmap pixmap="buttons/red.png" position="1050,920" size="35,35" alphatest="blend" />
-            <eLabel text="MENU: Settings" position="1100,910" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#800080" halign="center" valign="center" transparent="0"/>
+            <widget name="status" position="1530,920" size="270,50" font="Regular;26" foregroundColor="#00FF00" halign="left" />
+            
+            <!-- Ažurirane oznake za dugmad -->
+            <ePixmap pixmap="buttons/red.png" position="0,920" size="35,35" alphatest="blend" />
+            <eLabel text="Exit" position="50,910" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#800000" halign="center" valign="center" transparent="0" />
+            <ePixmap pixmap="buttons/green.png" position="250,920" size="35,35" alphatest="blend" />
+            <eLabel text="Search Movies" position="300,910" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#008000" halign="center" valign="center" transparent="0" />
+            <ePixmap pixmap="buttons/yellow.png" position="500,920" size="35,35" alphatest="blend" />
+            <eLabel text="Search Series" position="550,910" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#808000" halign="center" valign="center" transparent="0" />
+            <ePixmap pixmap="buttons/blue.png" position="750,920" size="35,35" alphatest="blend" />
+            <eLabel text="Auto EPG Search" position="800,910" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#000080" halign="center" valign="center" transparent="0" />
+            <ePixmap pixmap="buttons/red.png" position="1000,920" size="35,35" alphatest="blend" />
+            <eLabel text="OK:Backdrop" position="1050,910" size="200,50" font="Regular;24" foregroundColor="white" backgroundColor="#800080" halign="center" valign="center" transparent="0"/>
+            <ePixmap pixmap="buttons/green.png" position="1250,920" size="35,35" alphatest="blend" />
+            <eLabel text="MENU: Settings" position="1300,910" size="200,50" font="Regular;24" foregroundColor="white" backgroundColor="#023030" halign="center" valign="center" transparent="0"/>
         </screen>
     """.format(version=PLUGIN_VERSION)
 
@@ -441,31 +478,36 @@ class CiefpTMDBMain(Screen):
     def __init__(self, session):
         Screen.__init__(self, session)
         self.session = session
-
+        self.display_mode = 0
+        self.from_auto_epg = False
+        self.current_backdrop_path = None
         self["left_text"] = Label("")
-
         self["status"] = Label("Ready")
         self["epg_title"] = Label("")
         self["title"] = Label("")
         self["duration"] = Label("")
         self["rating"] = Label("")
+        self["imdb_rating"] = Label("")  # DODAJEMO IMDB rating widget
         self["genres"] = Label("")
         self["director"] = Label("")
         self["plot"] = Label("")
         self["cast"] = Label("")
         self["poster"] = Pixmap()
+        self["backdrop"] = Pixmap()
 
         # Extended action map
         self["actions"] = ActionMap(["OkCancelActions", "ColorActions", "MenuActions"],
         {
             "cancel": self.close,
+            "ok": self.toggle_backdrop_view,  # DODATO: OK dugme za backdrop
             "red": self.close,
             "green": self.search_movies,
             "yellow": self.search_series,
-            "blue": self.auto_epg_search,
+            "blue": self.auto_epg_search,  # PROMENJENO: sada je auto EPG search
             "menu": self.open_settings
         }, -1)
-
+        
+        self["backdrop"].hide()  # sakrij na početku
         # Timer for poster download timeout
         self.download_timer = eTimer()
         self.download_timer.timeout.get().append(self._download_timeout)
@@ -478,6 +520,7 @@ class CiefpTMDBMain(Screen):
 
         # show placeholder on start
         self.onLayoutFinish.append(self._show_placeholder)
+        self.onLayoutFinish.append(self.show_default_background)
         self.onClose.append(self.__onClose)
         
         self.container = eConsoleAppContainer()
@@ -529,12 +572,14 @@ class CiefpTMDBMain(Screen):
             self["status"].setText("Update cancelled.")
             return
         if os.path.exists(API_KEY_FILE):
+            import shutil
             shutil.copy2(API_KEY_FILE, BACKUP_FILE)
         self["status"].setText("Updating...")
         self.container.execute(UPDATE_COMMAND)
 
     def update_completed(self, retval):
         if os.path.exists(BACKUP_FILE):
+            import shutil
             shutil.move(BACKUP_FILE, API_KEY_FILE)
         if retval == 0:
             self["status"].setText("Update OK! Restarting...")
@@ -551,11 +596,144 @@ class CiefpTMDBMain(Screen):
             except Exception:
                 pass
 
-    def open_settings(self):
-        self.session.open(SettingsScreen)
+    def show_default_background(self):
+        # Ova metoda se više ne koristi za backdrop, jer backdrop sada ima specifičnu poziciju
+        # Umesto toga, samo sakrijemo backdrop
+        self["backdrop"].hide()
+
+    def download_backdrop_async(self, backdrop_path, media_id, media_type, callback):
+        if not backdrop_path or not media_id:
+            callback(None)
+            return
+        if not config.plugins.ciefptmdb.cache_enabled.value:
+            callback(None)
+            return
+
+        def download_thread():
+            try:
+                filename = ("backdrop_movie_" if media_type == "movie" else "backdrop_tv_") + f"{media_id}_{os.path.basename(backdrop_path)}"
+                folder = ensure_cache_folder()
+                fname = os.path.join(folder, filename)
+
+                if os.path.exists(fname):
+                    callback(fname)
+                    return
+
+                url = "https://image.tmdb.org/t/p/w1280" + backdrop_path
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                data = urllib.request.urlopen(url, context=ctx, timeout=12).read()
+                with open(fname, "wb") as f:
+                    f.write(data)
+                callback(fname)
+            except Exception as e:
+                print(f"[TMDB] Backdrop download error: {e}")
+                callback(None)
+
+        thread = threading.Thread(target=download_thread, daemon=True)
+        thread.start()
+
+    def backdrop_downloaded(self, path):
+        if path and os.path.exists(path):
+            self.current_backdrop_path = path
+            # Uvek ažuriraj backdrop kada se download završi
+            if self.display_mode == 1:
+                self.show_only_backdrop()
+        else:
+            self.current_backdrop_path = None
+            if self.display_mode == 1:
+                self.show_classic_view()
+
+    def _fetch_imdb_rating(self, media_info, media_type):
+        """Dobija IMDB ocenu u pozadini i ažurira prikaz"""
+        try:
+            imdb_rating = get_imdb_rating(media_info, media_type, config.plugins.ciefptmdb.omdb_api_key.value)
+            if imdb_rating:
+                # Ažuriraj prikaz na glavnom thread-u
+                self["imdb_rating"].setText(f"IMDB: {imdb_rating}/10 ⭐")
+            else:
+                self["imdb_rating"].setText("IMDB: N/A")
+        except Exception as e:
+            print(f"[TMDB] IMDB rating error: {e}")
+            self["imdb_rating"].setText("IMDB: Error")
+
+    def display_media_info(self, details, media_type, epg_title=""):
+        if not details:
+            self["status"].setText("No details from TMDB")
+            return
+
+        self["status"].setText("Info loaded")
+
+        # === OSNOVNE INFORMACIJE ===
+        title = details.get("title") if media_type == "movie" else details.get("name", "Unknown")
+        year = details.get("release_date", "")[:4] if media_type == "movie" else details.get("first_air_date", "")[:4]
+        self["title"].setText(title + (f" ({year})" if year else ""))
+        self["epg_title"].setText(f"EPG Title: {epg_title}" if epg_title else "")
+
+        # TMDB RATING
+        tmdb_rating = details.get("vote_average", 0)
+        self["rating"].setText(f"TMDB: {tmdb_rating:.1f}/10 ★" if tmdb_rating else "TMDB: N/A")
+
+        # IMDB RATING (dodajemo asinhrono da ne blokiramo prikaz)
+        if config.plugins.ciefptmdb.show_imdb_rating.value and config.plugins.ciefptmdb.omdb_api_key.value:
+            self["imdb_rating"].setText("IMDB: Loading...")
+            # Pokreni IMDB pretragu u pozadini
+            threading.Thread(target=self._fetch_imdb_rating, args=(details, media_type), daemon=True).start()
+        else:
+            self["imdb_rating"].setText("")
+
+        # DURATION
+        if media_type == "movie":
+            runtime = details.get("runtime")
+            duration = f"{runtime} min" if runtime else "N/A"
+        else:
+            runtime = details.get("episode_run_time")
+            duration = f"~{runtime[0]} min/ep" if runtime and len(runtime) > 0 else "N/A"
+        self["duration"].setText(f"Duration: {duration}")
+
+        # GENRES
+        genres = ", ".join([g["name"] for g in details.get("genres", [])]) or "N/A"
+        self["genres"].setText(f"Genres: {genres}")
+
+        # DIRECTOR/CREATOR
+        credits = details.get("credits", {})
+        crew = credits.get("crew", [])
+        directors = [c["name"] for c in crew if c["job"] == "Director"]
+        creators = [c["name"] for c in crew if c["known_for_department"] == "Creator"] if media_type == "tv" else []
+        dir_text = "Director: " + ", ".join(directors) if directors else ("Created by: " + ", ".join(creators) if creators else "N/A")
+        self["director"].setText(dir_text)
+
+        # PLOT
+        overview = details.get("overview", "") or "No description available."
+        self["plot"].setText("Plot:\n" + overview)
+
+        # CAST
+        cast_list = credits.get("cast", [])[:5]
+        cast_text = "Cast:\n" + ("\n".join([f"• {a['name']} as {a.get('character','')}" for a in cast_list]) if cast_list else "No cast info")
+        self["cast"].setText(cast_text)
+
+        # POSTER I BACKDROP
+        poster_path = details.get("poster_path")
+        media_id = details.get("id")
+        if poster_path and media_id:
+            download_poster_async(poster_path, media_id, media_type, self.poster_downloaded)
+        else:
+            self._show_placeholder()
+
+        # BACKDROP - OBAVEZNO DODAJTE
+        backdrop_path = details.get("backdrop_path")
+        if backdrop_path and media_id:
+            self.download_backdrop_async(backdrop_path, media_id, media_type, self.backdrop_downloaded)
+        else:
+            self.current_backdrop_path = None
+            self["backdrop"].hide()
 
     def auto_epg_search(self):
         self["status"].setText("Auto EPG Search in progress...")
+        self.from_auto_epg = True
+        self.display_mode = 0  # Resetuj na klasični prikaz
+        self.show_classic_view()
 
         event_data = get_current_epg_event()
         if not event_data or not event_data.get('name'):
@@ -584,7 +762,7 @@ class CiefpTMDBMain(Screen):
             self["status"].setText("TMDB API Key not set!")
             return
 
-        # NOVO: Koristimo multi search + pametan fallback
+        # Koristimo multi search + pametan fallback
         result, media_type = self.multi_search_with_fallback(title, year, api_key)
 
         if not result:
@@ -598,87 +776,6 @@ class CiefpTMDBMain(Screen):
             return
 
         self.display_media_info(details, media_type, raw_title)
-
-    def display_media_info(self, details, media_type, epg_title=""):
-        if not details:
-            self["status"].setText("No details from TMDB")
-            return
-
-        self["status"].setText("Info loaded")
-
-        # Naslov
-        title = details.get("title") if media_type == "movie" else details.get("name", "Unknown")
-        year = details.get("release_date", "")[:4] if media_type == "movie" else details.get("first_air_date", "")[:4]
-        self["title"].setText(title + (f" ({year})" if year else ""))
-
-        # EPG naslov (gore levo)
-        self["epg_title"].setText(f"EPG Title: {epg_title}" if epg_title else "")
-
-        # Ocena
-        rating = details.get("vote_average", 0)
-        if rating:
-            self["rating"].setText(f"{rating:.1f}/10 ★")
-        else:
-            self["rating"].setText("N/A")
-
-        # Trajanje
-        if media_type == "movie":
-            runtime = details.get("runtime")
-            duration = f"{runtime} min" if runtime else "N/A"
-        else:
-            runtime = details.get("episode_run_time")
-            if runtime and len(runtime) > 0:
-                duration = f"~{runtime[0]} min/ep"
-            else:
-                duration = "N/A"
-        self["duration"].setText(f"Duration: {duration}")
-
-        # Žanrovi
-        genres = ", ".join([g["name"] for g in details.get("genres", [])]) or "N/A"
-        self["genres"].setText(f"Genres: {genres}")
-
-        # Reditelj / Kreatori
-        credits = details.get("credits", {})
-        crew = credits.get("crew", [])
-        directors = [c["name"] for c in crew if c["job"] == "Director"]
-        creators = [c["name"] for c in crew if c["known_for_department"] == "Creator"] if media_type == "tv" else []
-        if directors:
-            dir_text = "Director: " + ", ".join(directors)
-        elif creators:
-            dir_text = "Created by: " + ", ".join(creators)
-        else:
-            dir_text = "N/A"
-        self["director"].setText(dir_text)
-
-        # Opis
-        overview = details.get("overview", "") or "No description available."
-        self["plot"].setText("Plot:\n" + overview)
-
-        # Glumci – samo prvih 5, lepše formatirano
-        cast_list = credits.get("cast", [])[:5]  # samo prvih 5
-        cast_text = "Cast:\n"
-        if cast_list:
-            for actor in cast_list:
-                character = actor.get("character", "").strip()
-                name = actor["name"]
-                if character:
-                    cast_text += f"• {name} as {character}\n"
-                else:
-                    cast_text += f"• {name}\n"
-        else:
-            cast_text += "No cast info"
-        self["cast"].setText(cast_text)
-
-        # Poster
-        poster_path = details.get("poster_path")
-        media_id = details.get("id")
-        if poster_path and media_id:
-            download_poster_async(poster_path, media_id, media_type, self.poster_downloaded)
-        else:
-            placeholder = load_pixmap_safe(PLACEHOLDER)
-            if placeholder:
-                self["poster"].instance.setPixmap(placeholder)
-            self["poster"].show()
 
     def poster_downloaded(self, path):
         if path and os.path.exists(path):
@@ -753,6 +850,91 @@ class CiefpTMDBMain(Screen):
                 return result, mtype
             return _search_tmdb_tv(title, year, api_key)
 
+    def toggle_backdrop_view(self):
+        """Toggle između klasičnog prikaza i backdrop prikaza - radi i za manualnu i auto pretragu"""
+
+        # Proveri da li ima backdrop slike
+        if not self.current_backdrop_path or not os.path.exists(self.current_backdrop_path):
+            self["status"].setText("No backdrop image available")
+            return
+
+        # Prebaci režim
+        self.display_mode = (self.display_mode + 1) % 2
+
+        if self.display_mode == 1:
+            # BACKDROP MOD - sakrij tekst, prikaži backdrop
+            self.show_only_backdrop()
+            self["status"].setText("Backdrop view - Press OK to return")
+        else:
+            # KLASIČNI MOD - vrati tekstualne informacije
+            self.show_classic_view()
+            self["status"].setText("Classic view")
+
+
+    def toggle_fullscreen_backdrop(self):
+        # Ako nismo došli preko Auto EPG → samo pokreni normalnu pretragu
+        if not self.from_auto_epg:
+            self.auto_epg_search()
+            return
+
+        # Prebaci režim
+        self.display_mode = (self.display_mode + 1) % 2
+        
+        if self.display_mode == 1 and self.current_backdrop_path:
+            # BACKDROP MOD – slika levo, informacije desno
+            self.show_only_backdrop()
+            self["status"].setText("Backdrop view")
+        else:
+            # VRATI KLASIČNI IZGLED
+            self.show_classic_view()
+            self["status"].setText("Classic view")
+
+    def show_only_backdrop(self):
+        """Prikaži samo backdrop sliku (sakrij sve tekstualne informacije)"""
+        # Sakrij SVE tekstualne widget-e sa leve strane
+        self["title"].hide()
+        self["epg_title"].hide()
+        self["duration"].hide()
+        self["rating"].hide()
+        self["imdb_rating"].hide()
+        self["genres"].hide()
+        self["director"].hide()
+        self["plot"].hide()
+        self["cast"].hide()
+        self["status"].hide()  # DODAJTE OVO
+
+        # OSTAVI POSTER VIDLJIV (desna strana ostaje ista)
+        self["poster"].show()
+
+        # Prikaži backdrop u levom delu ekrana
+        if self.current_backdrop_path and os.path.exists(self.current_backdrop_path):
+            pixmap = LoadPixmap(self.current_backdrop_path)
+            if pixmap:
+                self["backdrop"].instance.setPixmap(pixmap)
+                self["backdrop"].show()
+        else:
+            self["backdrop"].hide()
+
+    def show_classic_view(self):
+        """Prikaži klasični prikaz sa svim informacijama"""
+        # Vrati sve tekstualne widget-e vidljive
+        self["title"].show()
+        self["epg_title"].show()
+        self["duration"].show()
+        self["rating"].show()
+        self["imdb_rating"].show()
+        self["genres"].show()
+        self["director"].show()
+        self["plot"].show()
+        self["cast"].show()
+        self["status"].show()
+
+        # Poster ostaje vidljiv
+        self["poster"].show()
+
+        # Sakrij backdrop
+        self["backdrop"].hide()
+
     def search_movies(self):
         def callback(text):
             if text:
@@ -787,9 +969,12 @@ class CiefpTMDBMain(Screen):
             return
 
         # Clear previous results
+        self.display_mode = 0
+        self.show_classic_view()
         self["title"].setText("")
         self["duration"].setText("")
         self["rating"].setText("")
+        self["imdb_rating"].setText("")
         self["genres"].setText("")
         self["director"].setText("")
         self["plot"].setText("")
@@ -814,13 +999,12 @@ class CiefpTMDBMain(Screen):
         self._display_media_details(match, media_type, api_key)
 
     def _display_media_details(self, match, media_type, api_key, epg_info=None):
-        """Display media details using proper widgets"""
         details = _get_media_details(self.media_id, self.media_type, api_key)
         if not details:
             self["status"].setText("Error fetching details")
             self._show_placeholder()
             return
-
+			
         # ==================== DISPLAY DATA IN PROPER WIDGETS ====================
 
         # Title and year
@@ -847,12 +1031,19 @@ class CiefpTMDBMain(Screen):
         # Duration
         self["duration"].setText(f"Duration: {duration}")
 
-        # Rating
+        # TMDB Rating
         vote = details.get("vote_average", 0)
         if vote:
-            self["rating"].setText(f"Rating: {vote:.1f}/10 ★")
+            self["rating"].setText(f"TMDB: {vote:.1f}/10 ★")
         else:
-            self["rating"].setText("Rating: N/A")
+            self["rating"].setText("TMDB: N/A")
+
+        # IMDB Rating (asinhrono)
+        if config.plugins.ciefptmdb.show_imdb_rating.value and config.plugins.ciefptmdb.omdb_api_key.value:
+            self["imdb_rating"].setText("IMDB: Loading...")
+            threading.Thread(target=self._fetch_imdb_rating, args=(details, media_type), daemon=True).start()
+        else:
+            self["imdb_rating"].setText("")
 
         # Genres
         genres = [g["name"] for g in details.get("genres", [])]
@@ -933,7 +1124,20 @@ class CiefpTMDBMain(Screen):
                 download_poster_async(self.poster_path, self.media_id, self.media_type, poster_callback)
         else:
             self._show_placeholder()
-            self["status"].setText("Info loaded")
+        
+        backdrop_path = details.get("backdrop_path")
+        if backdrop_path and self.media_id:
+            self.download_backdrop_async(backdrop_path, self.media_id, media_type, self.backdrop_downloaded)
+        else:
+            self["backdrop"].hide()
+
+        self["status"].setText("Info loaded")  
+        
+        self.display_mode = 0
+        self.show_classic_view()
+    
+    def open_settings(self):
+        self.session.open(SettingsScreen)    
 
     def __onClose(self):
         # cleanup timer and actions
@@ -949,6 +1153,9 @@ class CiefpTMDBMain(Screen):
             pass
 
     def close(self):
+        self.display_mode = 0
+        self.from_auto_epg = False
+        self.current_backdrop_path = None
         try:
             if "actions" in self:
                 self["actions"].destroy()
@@ -968,12 +1175,13 @@ class SettingsScreen(Screen):
             <ePixmap pixmap="buttons/green.png" position="250,720" size="35,35" alphatest="blend" />
             <eLabel text="Save" position="300,710" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#008000" halign="center" valign="center" transparent="0" />
             <ePixmap pixmap="buttons/yellow.png" position="500,720" size="35,35" alphatest="blend" />
-            <eLabel text="API Key" position="550,710" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#808000" halign="center" valign="center" transparent="0" />
+            <eLabel text="TMDB API Key" position="550,710" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#808000" halign="center" valign="center" transparent="0" />
             <ePixmap pixmap="buttons/blue.png" position="750,720" size="35,35" alphatest="blend" />
-            <eLabel text="Language" position="800,710" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#000080" halign="center" valign="center" transparent="0" />
+            <eLabel text="OMDb API Key" position="800,710" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#000080" halign="center" valign="center" transparent="0" />
             <widget name="menu" position="50,50" size="900,550" scrollbarMode="showOnDemand" itemHeight="50" font="Regular;28" />
         </screen>
-    """ % BACKGROUND
+    """ % BACKGROUND_SETTINGS
+
 
     def __init__(self, session):
         Screen.__init__(self, session)
@@ -988,7 +1196,7 @@ class SettingsScreen(Screen):
                 "red": self.keyCancel,
                 "green": self.keySave,
                 "yellow": self.editApiKey,
-                "blue": self.change_language,
+                "blue": self.editOmdbApiKey,  # PROMENJENO: sada je OMDb API
                 "menu": self.clearCache,
                 "ok": self.keyOk
             }, -1)
@@ -1009,10 +1217,18 @@ class SettingsScreen(Screen):
         api_status = "✓ SET" if config.plugins.ciefptmdb.tmdb_api_key.value else "✗ NOT SET"
         self.menu_list.append(f"TMDB API Key: {api_status}")
 
+        # DODAJEMO OMDb API status
+        omdb_status = "✓ SET" if config.plugins.ciefptmdb.omdb_api_key.value else "✗ NOT SET"
+        self.menu_list.append(f"OMDb API Key: {omdb_status}")
+
         self.menu_list.append(f"Cache folder: {config.plugins.ciefptmdb.cache_folder.value}")
 
         poster_status = "YES" if config.plugins.ciefptmdb.cache_enabled.value else "NO"
         self.menu_list.append(f"Download Posters:  {poster_status}")
+
+        # DODAJEMO IMDB rating opciju
+        imdb_status = "YES" if config.plugins.ciefptmdb.show_imdb_rating.value else "NO"
+        self.menu_list.append(f"Show IMDB Rating:  {imdb_status}")
 
         # LANGUAGE
         lang_names = {
@@ -1048,10 +1264,14 @@ class SettingsScreen(Screen):
             config.plugins.ciefptmdb.cache_enabled.value = not config.plugins.ciefptmdb.cache_enabled.value
             self.buildMenu()
 
-        elif idx == 3:
+        elif idx == 3:  # Show IMDB Rating
+            config.plugins.ciefptmdb.show_imdb_rating.value = not config.plugins.ciefptmdb.show_imdb_rating.value
+            self.buildMenu()
+
+        elif idx == 4:  # Language
             self.change_language()
 
-        elif idx == 4:  # Clear cache
+        elif idx == 6:  # Clear cache
             self.clearCache()
 
     def change_language(self):
@@ -1090,10 +1310,21 @@ class SettingsScreen(Screen):
                 config.plugins.ciefptmdb.tmdb_api_key.value = result.strip()
                 config.plugins.ciefptmdb.tmdb_api_key.save()
                 save_api_key_to_file()
-                self["status"].setText("API key updated!")
+                self["status"].setText("TMDB API key updated!")
                 self.buildMenu()
         current_key = config.plugins.ciefptmdb.tmdb_api_key.value
         self.session.openWithCallback(callback, VirtualKeyBoard, title="Enter TMDB API Key", text=current_key)
+
+    def editOmdbApiKey(self):
+        def callback(result):
+            if result is not None:
+                config.plugins.ciefptmdb.omdb_api_key.value = result.strip()
+                config.plugins.ciefptmdb.omdb_api_key.save()
+                save_omdb_api_key_to_file()
+                self["status"].setText("OMDb API key updated!")
+                self.buildMenu()
+        current_key = config.plugins.ciefptmdb.omdb_api_key.value
+        self.session.openWithCallback(callback, VirtualKeyBoard, title="Enter OMDb API Key", text=current_key)
 
     def clearCache(self):
         poster_count, cache_size = get_cache_info()
@@ -1116,7 +1347,9 @@ class SettingsScreen(Screen):
     def keySave(self):
         try:
             save_api_key_to_file()
+            save_omdb_api_key_to_file()
             config.plugins.ciefptmdb.cache_enabled.save()
+            config.plugins.ciefptmdb.show_imdb_rating.save()
             config.plugins.ciefptmdb.language.save()
             configfile.save()
             self["status"].setText("All settings saved!")
