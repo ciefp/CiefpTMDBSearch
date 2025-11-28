@@ -38,19 +38,39 @@ config.plugins.ciefptmdb.cache_enabled = ConfigYesNo(default=True)
 config.plugins.ciefptmdb.language = ConfigSelection(default="en-US", choices=[
     ("en-US", "English"),
     ("sr-RS", "Srpski"),
-    ("hr-HR", "Hrvatski"),
+    ("hr-HR", "Hrvatski"), 
     ("bs-BA", "Bosanski"),
-    ("sk-SK", "Slovenský"),  
+    ("sl-SI", "Slovenščina"),  # DODAJ SLOVENAČKI
+    ("mk-MK", "Македонски"),    # DODAJ MAKEDONSKI
+    ("cs-CZ", "Čeština"),      # DODAJ ČEŠKI
+    ("sk-SK", "Slovenský"),
+    ("hu-HU", "Magyar"),       # DODAJ MAĐARSKI
+    ("ro-RO", "Română"),       # DODAJ RUMUNSKI
+    ("bg-BG", "Български"),    # DODAJ BUGARSKI
+    ("el-GR", "Ελληνικά"),     # DODAJ GRČKI
     ("de-DE", "Deutsch"),
-    ("es-ES", "Español"),
     ("fr-FR", "Français"),
+    ("es-ES", "Español"),
     ("it-IT", "Italiano"),
+    ("pt-PT", "Português PT"), # DODAJ PORTUGALSKI (Evropa)
+    ("pt-BR", "Português BR"),
+    ("nl-NL", "Nederlands"),   # DODAJ HOLANDSKI
+    ("sv-SE", "Svenska"),      # DODAJ ŠVEDSKI
+    ("no-NO", "Norsk"),        # DODAJ NORVEŠKI
+    ("da-DK", "Dansk"),        # DODAJ DANSKI
+    ("fi-FI", "Suomi"),        # DODAJ FINSKI
     ("ru-RU", "Русский"),
-    ("pt-BR", "Português"),
+    ("uk-UA", "Українська"),   # DODAJ UKRAJINSKI
     ("pl-PL", "Polski"),
     ("tr-TR", "Türkçe"),
     ("ar-AE", "العربية"),
-    ("zh-CN", "中文")
+    ("he-IL", "עברית"),        # DODAJ HEBREJSKI
+    ("ja-JP", "日本語"),        # DODAJ JAPANSKI
+    ("ko-KR", "한국어"),        # DODAJ KOREJSKI
+    ("zh-CN", "中文 (简)"),
+    ("zh-TW", "中文 (繁)"),     # DODAJ KINESKI (Tradicionalni)
+    ("th-TH", "ไทย"),          # DODAJ TAJLANDSKI
+    ("vi-VN", "Tiếng Việt"),   # DODAJ VIJETNAMSKI
 ])
 config.plugins.ciefptmdb.auto_search_epg = ConfigYesNo(default=True)
 config.plugins.ciefptmdb.show_imdb_rating = ConfigYesNo(default=True)  # DODAJEMO opciju za IMDB rating
@@ -58,7 +78,7 @@ config.plugins.ciefptmdb.show_imdb_rating = ConfigYesNo(default=True)  # DODAJEM
 # plugin dir and files
 PLUGIN_NAME = "CiefpTMDBSearch"
 PLUGIN_DESC = "TMDB search for movies and series with poster, rating, actors and description"
-PLUGIN_VERSION = "1.4"
+PLUGIN_VERSION = "1.5"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else "/usr/lib/enigma2/python/Plugins/Extensions/CiefpTMDBSearch"
 API_KEY_FILE = os.path.join(PLUGIN_DIR, "tmdbapikey.txt")
 OMDB_API_KEY_FILE = os.path.join(PLUGIN_DIR, "omdbapikey.txt")  # DODAJEMO OMDb API fajl
@@ -1230,23 +1250,19 @@ class SettingsScreen(Screen):
         imdb_status = "YES" if config.plugins.ciefptmdb.show_imdb_rating.value else "NO"
         self.menu_list.append(f"Show IMDB Rating:  {imdb_status}")
 
-        # LANGUAGE
         lang_names = {
-            "en-US": "English",
-            "sr-RS": "Srpski",
-            "hr-HR": "Hrvatski",
-            "bs-BA": "Bosanski",
-            "sk-SK": "Slovenský",
-            "de-DE": "Deutsch",
-            "es-ES": "Español",
-            "fr-FR": "Français",
-            "it-IT": "Italiano",
-            "ru-RU": "Русский",
-            "pt-BR": "Português",
-            "pl-PL": "Polski",
-            "tr-TR": "Türkçe",
-            "ar-AE": "العربية",
-            "zh-CN": "中文"
+            "en-US": "English", "sr-RS": "Srpski", "hr-HR": "Hrvatski",
+            "bs-BA": "Bosanski", "sl-SI": "Slovenščina", "mk-MK": "Македонски",
+            "cs-CZ": "Čeština", "sk-SK": "Slovenský", "hu-HU": "Magyar", 
+            "ro-RO": "Română", "bg-BG": "Български", "el-GR": "Ελληνικά",
+            "de-DE": "Deutsch", "fr-FR": "Français", "es-ES": "Español",
+            "it-IT": "Italiano", "pt-PT": "Português PT", "pt-BR": "Português BR",
+            "nl-NL": "Nederlands", "sv-SE": "Svenska", "no-NO": "Norsk",
+            "da-DK": "Dansk", "fi-FI": "Suomi", "ru-RU": "Русский",
+            "uk-UA": "Українська", "pl-PL": "Polski", "tr-TR": "Türkçe",
+            "ar-AE": "العربية", "he-IL": "עברית", "ja-JP": "日本語",
+            "ko-KR": "한국어", "zh-CN": "中文 (简)", "zh-TW": "中文 (繁)",
+            "th-TH": "ไทย", "vi-VN": "Tiếng Việt"
         }
         current_lang = lang_names.get(config.plugins.ciefptmdb.language.value, "English")
         self.menu_list.append(f"Description language: {current_lang}")
@@ -1260,25 +1276,32 @@ class SettingsScreen(Screen):
     def keyOk(self):
         idx = self["menu"].getSelectedIndex()
 
-        if idx == 2:  # Download posters
+        if idx == 0:  # TMDB API Key status
+            self.editApiKey()
+        elif idx == 1:  # OMDb API Key status
+            self.editOmdbApiKey()
+        elif idx == 2:  # Cache folder
+            pass  # Ne radi ništa, samo informacija
+        elif idx == 3:  # Download Posters
             config.plugins.ciefptmdb.cache_enabled.value = not config.plugins.ciefptmdb.cache_enabled.value
             self.buildMenu()
-
-        elif idx == 3:  # Show IMDB Rating
+        elif idx == 4:  # Show IMDB Rating
             config.plugins.ciefptmdb.show_imdb_rating.value = not config.plugins.ciefptmdb.show_imdb_rating.value
             self.buildMenu()
-
-        elif idx == 4:  # Language
+        elif idx == 5:  # Language
             self.change_language()
-
-        elif idx == 6:  # Clear cache
+        elif idx == 7:  # Clear cache (poslednja stavka)
             self.clearCache()
+
 
     def change_language(self):
         lang_order = [
-            "en-US", "sr-RS", "hr-HR", "bs-BA", "sk-SK",
-            "de-DE", "es-ES", "fr-FR", "it-IT", "ru-RU",
-            "pt-BR", "pl-PL", "tr-TR", "ar-AE", "zh-CN"
+            "en-US", "sr-RS", "hr-HR", "bs-BA", "sl-SI", "mk-MK",
+            "cs-CZ", "sk-SK", "hu-HU", "ro-RO", "bg-BG", "el-GR",
+            "de-DE", "fr-FR", "es-ES", "it-IT", "pt-PT", "pt-BR",
+            "nl-NL", "sv-SE", "no-NO", "da-DK", "fi-FI", "ru-RU",
+            "uk-UA", "pl-PL", "tr-TR", "ar-AE", "he-IL", "ja-JP",
+            "ko-KR", "zh-CN", "zh-TW", "th-TH", "vi-VN"
         ]
 
         try:
@@ -1294,11 +1317,18 @@ class SettingsScreen(Screen):
         configfile.save()
 
         pretty_names = {
-            "en-US": "English", "sr-RS": "Srpski",     "hr-HR": "Hrvatski",
-            "bs-BA": "Bosanski", "sk-SK": "Slovenský", "de-DE": "Deutsch",
-            "es-ES": "Español",  "fr-FR": "Français",  "it-IT": "Italiano",
-            "ru-RU": "Русский",  "pt-BR": "Português", "pl-PL": "Polski",
-            "tr-TR": "Türkçe",   "ar-AE": "العربية",     "zh-CN": "中文"
+            "en-US": "English", "sr-RS": "Srpski", "hr-HR": "Hrvatski",
+            "bs-BA": "Bosanski", "sl-SI": "Slovenščina", "mk-MK": "Македонски",
+            "cs-CZ": "Čeština", "sk-SK": "Slovenský", "hu-HU": "Magyar",
+            "ro-RO": "Română", "bg-BG": "Български", "el-GR": "Ελληνικά",
+            "de-DE": "Deutsch", "fr-FR": "Français", "es-ES": "Español",
+            "it-IT": "Italiano", "pt-PT": "Português PT", "pt-BR": "Português BR",
+            "nl-NL": "Nederlands", "sv-SE": "Svenska", "no-NO": "Norsk",
+            "da-DK": "Dansk", "fi-FI": "Suomi", "ru-RU": "Русский",
+            "uk-UA": "Українська", "pl-PL": "Polski", "tr-TR": "Türkçe",
+            "ar-AE": "العربية", "he-IL": "עברית", "ja-JP": "日本語",
+            "ko-KR": "한국어", "zh-CN": "中文 (简)", "zh-TW": "中文 (繁)",
+            "th-TH": "ไทย", "vi-VN": "Tiếng Việt"
         }
 
         self["status"].setText(f"Language → {pretty_names[next_code]}")
