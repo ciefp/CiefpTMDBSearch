@@ -12,6 +12,7 @@ import time
 from io import BytesIO
 
 # Enigma2 imports
+from Components.ScrollLabel import ScrollLabel
 from Components.config import config, ConfigSubsection, ConfigText, ConfigSelection, ConfigYesNo
 from Components.Pixmap import Pixmap
 from Components.ActionMap import ActionMap
@@ -22,6 +23,7 @@ from Plugins.Plugin import PluginDescriptor
 from Screens.Screen import Screen
 from Screens.VirtualKeyBoard import VirtualKeyBoard
 from Screens.MessageBox import MessageBox
+from Screens.ChoiceBox import ChoiceBox
 from enigma import eTimer, eServiceCenter, iServiceInformation, eEPGCache, eConsoleAppContainer, eSize, ePoint
 from Tools.LoadPixmap import LoadPixmap
 
@@ -78,7 +80,7 @@ config.plugins.ciefptmdb.show_imdb_rating = ConfigYesNo(default=True)  # DODAJEM
 # plugin dir and files
 PLUGIN_NAME = "CiefpTMDBSearch"
 PLUGIN_DESC = "TMDB search for movies and series with poster, rating, actors and description"
-PLUGIN_VERSION = "1.5"
+PLUGIN_VERSION = "1.6"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else "/usr/lib/enigma2/python/Plugins/Extensions/CiefpTMDBSearch"
 API_KEY_FILE = os.path.join(PLUGIN_DIR, "tmdbapikey.txt")
 OMDB_API_KEY_FILE = os.path.join(PLUGIN_DIR, "omdbapikey.txt")  # DODAJEMO OMDb API fajl
@@ -293,6 +295,77 @@ def _get_media_details(media_id, media_type, api_key):
         print(f"[TMDB] Details error: {e}")
         return None
 
+# ---------- TMDB ADVANCED HELPERS ----------
+def _search_tmdb_person(name, api_key=None):
+    """Pretraga glumaca i direktora"""
+    if not api_key:
+        return None, None
+    try:
+        language = config.plugins.ciefptmdb.language.value
+        params = {"api_key": api_key, "query": name, "language": language}
+        url = "https://api.themoviedb.org/3/search/person?" + urllib.parse.urlencode(params)
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        results = data.get("results", [])
+        return (results[0], "person") if results else (None, None)
+    except Exception as e:
+        print(f"[TMDB] Person search error: {e}")
+        return None, None
+
+
+def _get_person_details(person_id, api_key):
+    """Dobijanje detalja o osobi"""
+    try:
+        language = config.plugins.ciefptmdb.language.value
+        url = f"https://api.themoviedb.org/3/person/{person_id}?api_key={api_key}&language={language}&append_to_response=movie_credits,tv_credits"
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8", errors="ignore"))
+    except Exception as e:
+        print(f"[TMDB] Person details error: {e}")
+        return None
+
+
+def download_person_photo_async(profile_path, person_id, callback):
+    """Download slike glumca/direktora"""
+    if not profile_path or not person_id:
+        callback(None)
+        return
+    if not config.plugins.ciefptmdb.cache_enabled.value:
+        callback(None)
+        return
+
+    def download_thread():
+        try:
+            filename = f"person_{person_id}_{os.path.basename(profile_path)}"
+            folder = ensure_cache_folder()
+            fname = os.path.join(folder, filename)
+
+            if os.path.exists(fname):
+                callback(fname)
+                return
+
+            base = "https://image.tmdb.org/t/p/h632"  # Optimalna veličina za profile
+            url = base + profile_path
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            data = urllib.request.urlopen(url, context=ctx, timeout=8).read()
+            with open(fname, "wb") as f:
+                f.write(data)
+            callback(fname)
+        except Exception as e:
+            print(f"[TMDB] Person photo download error: {e}")
+            callback(None)
+
+    thread = threading.Thread(target=download_thread, daemon=True)
+    thread.start()
+
 # ---------- OMDb helpers ----------
 def _search_omdb(title, year=None, api_key=None):
     if not api_key:
@@ -463,30 +536,30 @@ class CiefpTMDBMain(Screen):
             <widget name="genres" position="50,280" size="1200,40" font="Regular;30" foregroundColor="blue" backgroundColor="background" transparent="1"/>
             <widget name="director" position="50,320" size="1200,40" font="Regular;30" foregroundColor="orange" backgroundColor="background" transparent="1"/>
 
-            <!-- Plot -->
+            <!-- Plot - Vraćamo na običan Label -->
             <widget name="plot" position="50,370" size="1200,300" font="Regular;28" foregroundColor="white" backgroundColor="background" transparent="1" valign="top"/>
 
-            <!-- Cast -->
+            <!-- Cast - Vraćamo na običan Label -->
             <widget name="cast" position="50,680" size="1200,250" font="Regular;26" foregroundColor="cyan" backgroundColor="background" transparent="1" valign="top"/>
 
             <!-- Poster -->
             <widget name="poster" position="1300,100" size="500,750" alphatest="blend" zPosition="2"/>
             
-            <!-- Backdrop - DODAJTE OVO -->
+            <!-- Backdrop -->
             <widget name="backdrop" position="50,100" size="1200,720" zPosition="1" alphatest="blend" />
     
             <!-- Status -->
-            <widget name="status" position="1530,920" size="270,50" font="Regular;26" foregroundColor="#00FF00" halign="left" />
+            <widget name="status" position="1530,910" size="270,60" font="Regular;26" foregroundColor="#00FF00" halign="left" />
             
             <!-- Ažurirane oznake za dugmad -->
             <ePixmap pixmap="buttons/red.png" position="0,920" size="35,35" alphatest="blend" />
             <eLabel text="Exit" position="50,910" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#800000" halign="center" valign="center" transparent="0" />
             <ePixmap pixmap="buttons/green.png" position="250,920" size="35,35" alphatest="blend" />
-            <eLabel text="Search Movies" position="300,910" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#008000" halign="center" valign="center" transparent="0" />
+            <eLabel text="Adv.Search" position="300,910" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#008000" halign="center" valign="center" transparent="0" />
             <ePixmap pixmap="buttons/yellow.png" position="500,920" size="35,35" alphatest="blend" />
-            <eLabel text="Search Series" position="550,910" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#808000" halign="center" valign="center" transparent="0" />
+            <eLabel text="Cast Exp." position="550,910" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#808000" halign="center" valign="center" transparent="0" />
             <ePixmap pixmap="buttons/blue.png" position="750,920" size="35,35" alphatest="blend" />
-            <eLabel text="Auto EPG Search" position="800,910" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#000080" halign="center" valign="center" transparent="0" />
+            <eLabel text="Auto EPG" position="800,910" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#000080" halign="center" valign="center" transparent="0" />
             <ePixmap pixmap="buttons/red.png" position="1000,920" size="35,35" alphatest="blend" />
             <eLabel text="OK:Backdrop" position="1050,910" size="200,50" font="Regular;24" foregroundColor="white" backgroundColor="#800080" halign="center" valign="center" transparent="0"/>
             <ePixmap pixmap="buttons/green.png" position="1250,920" size="35,35" alphatest="blend" />
@@ -494,20 +567,25 @@ class CiefpTMDBMain(Screen):
         </screen>
     """.format(version=PLUGIN_VERSION)
 
-
     def __init__(self, session):
         Screen.__init__(self, session)
         self.session = session
         self.display_mode = 0
         self.from_auto_epg = False
         self.current_backdrop_path = None
+        self.current_media_details = None
+        self.current_media_type = None
+        self.current_person_details = None
+        self.current_person_name = None
+        self.previous_person_details = None
+        self.previous_person_name = None
         self["left_text"] = Label("")
         self["status"] = Label("Ready")
         self["epg_title"] = Label("")
         self["title"] = Label("")
         self["duration"] = Label("")
         self["rating"] = Label("")
-        self["imdb_rating"] = Label("")  # DODAJEMO IMDB rating widget
+        self["imdb_rating"] = Label("") 
         self["genres"] = Label("")
         self["director"] = Label("")
         self["plot"] = Label("")
@@ -516,17 +594,19 @@ class CiefpTMDBMain(Screen):
         self["backdrop"] = Pixmap()
 
         # Extended action map
-        self["actions"] = ActionMap(["OkCancelActions", "ColorActions", "MenuActions"],
-        {
-            "cancel": self.close,
-            "ok": self.toggle_backdrop_view,  # DODATO: OK dugme za backdrop
-            "red": self.close,
-            "green": self.search_movies,
-            "yellow": self.search_series,
-            "blue": self.auto_epg_search,  # PROMENJENO: sada je auto EPG search
-            "menu": self.open_settings
-        }, -1)
-        
+        self["actions"] = ActionMap(["OkCancelActions", "ColorActions", "MenuActions", "DirectionActions"],
+                                    {
+                                        "cancel": self.keyBack,  # PROMENJENO: sada poziva keyBack umesto cl
+                                        "ok": self.toggle_backdrop_view,
+                                        "red": self.close,
+                                        "green": self.advanced_search_menu,  # Manuelna pretraga
+                                        "yellow": self.auto_cast_explorer,  # AUTO Cast Explorer
+                                        "blue": self.auto_epg_search,  # Auto EPG pretraga
+                                        "menu": self.open_settings,
+                                        "up": self.keyUp,
+                                        "down": self.keyDown
+                                    }, -1)
+
         self["backdrop"].hide()  # sakrij na početku
         # Timer for poster download timeout
         self.download_timer = eTimer()
@@ -683,6 +763,9 @@ class CiefpTMDBMain(Screen):
             self["status"].setText("No details from TMDB")
             return
 
+        self.current_media_details = details
+        self.current_media_type = media_type
+
         self["status"].setText("Info loaded")
 
         # === OSNOVNE INFORMACIJE ===
@@ -721,16 +804,20 @@ class CiefpTMDBMain(Screen):
         crew = credits.get("crew", [])
         directors = [c["name"] for c in crew if c["job"] == "Director"]
         creators = [c["name"] for c in crew if c["known_for_department"] == "Creator"] if media_type == "tv" else []
-        dir_text = "Director: " + ", ".join(directors) if directors else ("Created by: " + ", ".join(creators) if creators else "N/A")
+        dir_text = "Director: " + ", ".join(directors) if directors else (
+            "Created by: " + ", ".join(creators) if creators else "N/A")
         self["director"].setText(dir_text)
 
-        # PLOT
+        # PLOT - ograniči dužinu
         overview = details.get("overview", "") or "No description available."
+        if len(overview) > 500:
+            overview = overview[:500] + "..."
         self["plot"].setText("Plot:\n" + overview)
 
-        # CAST
-        cast_list = credits.get("cast", [])[:5]
-        cast_text = "Cast:\n" + ("\n".join([f"• {a['name']} as {a.get('character','')}" for a in cast_list]) if cast_list else "No cast info")
+        # CAST - ograniči broj glumaca
+        cast_list = credits.get("cast", [])[:4]  # Samo 4 glumca
+        cast_text = "Cast:\n" + ("\n".join(
+            [f"• {a['name']} as {a.get('character', '')}" for a in cast_list]) if cast_list else "No cast info")
         self["cast"].setText(cast_text)
 
         # POSTER I BACKDROP
@@ -741,7 +828,7 @@ class CiefpTMDBMain(Screen):
         else:
             self._show_placeholder()
 
-        # BACKDROP - OBAVEZNO DODAJTE
+        # BACKDROP
         backdrop_path = details.get("backdrop_path")
         if backdrop_path and media_id:
             self.download_backdrop_async(backdrop_path, media_id, media_type, self.backdrop_downloaded)
@@ -870,6 +957,488 @@ class CiefpTMDBMain(Screen):
                 return result, mtype
             return _search_tmdb_tv(title, year, api_key)
 
+    def advanced_search_menu(self):
+        """Prikazuje meni za naprednu pretragu"""
+        from Screens.ChoiceBox import ChoiceBox
+
+        menu_list = [
+            ("Search Movies", "movies"),
+            ("Search TV Series", "series"),
+            ("Search Actors", "actors"),
+            ("Search Directors", "directors")
+        ]
+
+        def search_callback(choice):
+            if choice:
+                if choice[1] == "movies":
+                    self.search_movies()
+                elif choice[1] == "series":
+                    self.search_series()
+                elif choice[1] == "actors":
+                    self.search_actors()
+                elif choice[1] == "directors":
+                    self.search_directors()
+
+        self.session.openWithCallback(search_callback, ChoiceBox,
+                                      title="Advanced Search - Select Type",
+                                      list=menu_list)
+
+    def cast_explorer_menu(self):
+        """Prikazuje meni za istraživanje glumačke ekipe"""
+        from Screens.ChoiceBox import ChoiceBox
+
+        # Proveri da li postoji trenutni media
+        if not self.media_id or not self.media_type:
+            self["status"].setText("No media loaded!")
+            return
+
+        menu_list = [
+            ("⭐ Main Cast", "main_cast"),
+            ("👥 Full Cast & Crew", "full_cast"),
+            ("🌟 Actor Profiles", "actor_profiles")
+        ]
+
+        def cast_callback(choice):
+            if choice:
+                if choice[1] == "main_cast":
+                    self.show_main_cast()
+                elif choice[1] == "full_cast":
+                    self.show_full_cast()
+                elif choice[1] == "actor_profiles":
+                    self.show_actor_profiles()
+
+        self.session.openWithCallback(cast_callback, ChoiceBox,
+                                      title="Cast & Crew Explorer",
+                                      list=menu_list)
+
+    def search_actors(self):
+        """Pretraga glumaca"""
+
+        def callback(text):
+            if text:
+                self["status"].setText(f"Searching actors: {text}")
+                self.tmdb_search_person(text, "actor")
+
+        self.session.openWithCallback(callback, VirtualKeyBoard,
+                                      title="Search Actors", text="")
+
+    def search_directors(self):
+        """Pretraga direktora"""
+
+        def callback(text):
+            if text:
+                self["status"].setText(f"Searching directors: {text}")
+                self.tmdb_search_person(text, "director")
+
+        self.session.openWithCallback(callback, VirtualKeyBoard,
+                                      title="Search Directors", text="")
+
+    def tmdb_search_person(self, query, person_type):
+        """TMDB pretraga osoba"""
+        api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
+        if not api_key:
+            self["status"].setText("TMDB API key not set!")
+            return
+
+        # Clear previous results
+        self.display_mode = 0
+        self.show_classic_view()
+        self.clear_display()
+
+        self["status"].setText(f"Searching {person_type}...")
+        match, media_type = _search_tmdb_person(query, api_key)
+
+        if not match:
+            self["status"].setText(f"No {person_type} found")
+            self._show_placeholder()
+            return
+
+        self.current_person_name = query  # Spremi ime osobe
+        self.display_person_info(match, api_key, person_type)
+
+    def display_person_info(self, person_data, api_key, person_type):
+        """Prikazuje informacije o glumcu/direktoru sa korisnim informacijama"""
+        person_id = person_data.get("id")
+        details = _get_person_details(person_id, api_key)
+
+        if not details:
+            self["status"].setText("Error loading person details")
+            return
+
+        self.current_person_details = details  # SPREMI DETALJE OSOBE
+        self.current_person_name = details.get("name", "Unknown")
+        
+        # Prikaz osnovnih informacija
+        name = details.get("name", "N/A")
+        known_for = details.get("known_for_department", "N/A")
+        birthday = details.get("birthday", "N/A")
+        place_of_birth = details.get("place_of_birth", "N/A")
+        biography = details.get("biography", "No biography available.")
+
+        self["title"].setText(f"{name} ({known_for})")
+        self["epg_title"].setText("")  # Clear EPG title
+
+        # Osnovne informacije
+        birth_info = f"Born: {birthday}"
+        if place_of_birth and place_of_birth != "N/A":
+            birth_info += f" in {place_of_birth}"
+        self["duration"].setText(birth_info)
+
+        # KORISNE INFORMACIJE - Godine karijere i filmografija
+        movie_count = len(details.get("movie_credits", {}).get("cast", []))
+        tv_count = len(details.get("tv_credits", {}).get("cast", []))
+
+        career_info = ""
+        if birthday:
+            try:
+                birth_year = int(birthday[:4])
+                current_year = 2024  # Možeš da koristiš datetime.now().year ali 2024 je sigurnije
+                career_years = current_year - birth_year
+                career_info = f"{career_years}+ years"
+            except:
+                pass
+
+        filmography_info = f"{movie_count} movies"
+        if tv_count > 0:
+            filmography_info += f", {tv_count} TV"
+
+        if career_info:
+            self["rating"].setText(f"{career_info} | {filmography_info}")
+        else:
+            self["rating"].setText(filmography_info)
+
+        # Ostali widgeti prazni
+        self["imdb_rating"].setText("")
+        self["genres"].setText("")
+        self["director"].setText("")
+
+        # Biografija - koristimo plot widget
+        if len(biography) > 400:
+            biography = biography[:400] + "..."
+        self["plot"].setText(f"Biography:\n{biography}")
+
+        # Filmografija - POBOLJŠANO SORTIRANJE
+        movie_credits = details.get("movie_credits", {}).get("cast", [])
+        tv_credits = details.get("tv_credits", {}).get("cast", [])
+
+        # Sortiraj po kombinovanom skoru (popularnost + broj glasova)
+        def get_movie_score(movie):
+            popularity = movie.get('popularity', 0) or 0
+            vote_count = movie.get('vote_count', 0) or 0
+            # Daj veću težinu broju glasova jer je to bolji pokazatelj popularnosti
+            return (vote_count * 10) + popularity
+
+        def get_tv_score(tv):
+            popularity = tv.get('popularity', 0) or 0
+            vote_count = tv.get('vote_count', 0) or 0
+            return (vote_count * 10) + popularity
+
+        # Sortiraj i uzmi najbolje
+        movie_credits.sort(key=get_movie_score, reverse=True)
+        tv_credits.sort(key=get_tv_score, reverse=True)
+
+        top_movies = movie_credits[:4]  # Uzmi 4 najbolja filma
+        top_tv = tv_credits[:2]  # Uzmi 2 najbolje TV serije
+
+        filmography = "Known For:\n"
+        if top_movies:
+            filmography += "Movies:\n"
+            for movie in top_movies:
+                title = movie.get('title', 'N/A')
+                year = movie.get('release_date', '')[:4]
+                # Prikaži samo ako ima naslov
+                if title and title != 'N/A':
+                    filmography += f"• {title} ({year})\n"
+
+        if top_tv:
+            filmography += "TV Series:\n"
+            for tv in top_tv:
+                name = tv.get('name', 'N/A')
+                year = tv.get('first_air_date', '')[:4]
+                # Prikaži samo ako ima naslov
+                if name and name != 'N/A':
+                    filmography += f"• {name} ({year})\n"
+
+        # Ako nema filmova/serija, prikaži poruku
+        if not top_movies and not top_tv:
+            filmography += "No notable works found"
+
+        self["cast"].setText(filmography)
+
+        # Download slike
+        profile_path = details.get("profile_path")
+        if profile_path:
+            download_person_photo_async(profile_path, person_id, self.person_photo_downloaded)
+        else:
+            self._show_placeholder()
+
+        self["status"].setText(f"{person_type.capitalize()} info loaded")
+
+    def person_photo_downloaded(self, path):
+        """Callback kada se photo download završi"""
+        if path and os.path.exists(path):
+            pixmap = load_pixmap_safe(path)
+            if pixmap:
+                self["poster"].instance.setPixmap(pixmap)
+                self["poster"].show()
+                return
+
+        # Fallback na placeholder
+        self._show_placeholder()
+
+    def clear_display(self):
+        """Čisti prikaz pre nove pretrage"""
+        self["title"].setText("")
+        self["duration"].setText("")
+        self["rating"].setText("")
+        self["imdb_rating"].setText("")
+        self["genres"].setText("")
+        self["director"].setText("")
+        self["plot"].setText("")
+        self["cast"].setText("")
+        self["epg_title"].setText("")
+
+    def show_person_filmography(self):
+        """Prikazuje filmografiju glumca/režisera u ChoiceBox-u sa ocenama - sortirano po popularnosti"""
+        if not hasattr(self, 'current_person_details'):
+            self["status"].setText("No person details available")
+            return
+
+        person_details = self.current_person_details
+        person_name = person_details.get("name", "Unknown")
+
+        # Uzmi filmove i TV serije
+        movie_credits = person_details.get("movie_credits", {}).get("cast", [])
+        tv_credits = person_details.get("tv_credits", {}).get("cast", [])
+
+        # Sortiraj po popularnosti (najpopularniji prvi)
+        def get_movie_score(movie):
+            popularity = movie.get('popularity', 0) or 0
+            vote_count = movie.get('vote_count', 0) or 0
+            # Daj veću težinu broju glasova jer je to bolji pokazatelj popularnosti
+            return (vote_count * 10) + popularity
+
+        def get_tv_score(tv):
+            popularity = tv.get('popularity', 0) or 0
+            vote_count = tv.get('vote_count', 0) or 0
+            return (vote_count * 10) + popularity
+
+        movie_credits.sort(key=get_movie_score, reverse=True)
+        tv_credits.sort(key=get_tv_score, reverse=True)
+
+        # Napravi listu za ChoiceBox
+        menu_list = []
+
+        # Dodaj najpopularnije filmove (prvih 8)
+        for movie in movie_credits[:8]:
+            title = movie.get('title', 'N/A')
+            year = movie.get('release_date', '')[:4]
+            rating = movie.get('vote_average', 0)
+
+            if title and title != 'N/A':
+                # Formatiraj ocenu sa zvezdicama
+                if rating >= 8:
+                    stars = "★★★★★"
+                elif rating >= 7:
+                    stars = "★★★★☆"
+                elif rating >= 6:
+                    stars = "★★★☆☆"
+                elif rating >= 5:
+                    stars = "★★☆☆☆"
+                elif rating > 0:
+                    stars = "★☆☆☆☆"
+                else:
+                    stars = "☆☆☆☆☆"  # Nema ocenu
+
+                # SAMO NASLOV I OCENA - BEZ KARAKTERA
+                if rating > 0:
+                    menu_list.append((f"[Mov] {title} ({year}) {stars} {rating:.1f}", movie))
+                else:
+                    menu_list.append((f"[Mov] {title} ({year})", movie))
+
+        # Dodaj najpopularnije TV serije (prvih 4)
+        for tv in tv_credits[:4]:
+            name = tv.get('name', 'N/A')
+            year = tv.get('first_air_date', '')[:4]
+            rating = tv.get('vote_average', 0)
+
+            if name and name != 'N/A':
+                # Formatiraj ocenu sa zvezdicama
+                if rating >= 8:
+                    stars = "★★★★★"
+                elif rating >= 7:
+                    stars = "★★★★☆"
+                elif rating >= 6:
+                    stars = "★★★☆☆"
+                elif rating >= 5:
+                    stars = "★★☆☆☆"
+                elif rating > 0:
+                    stars = "★☆☆☆☆"
+                else:
+                    stars = "☆☆☆☆☆"  # Nema ocenu
+
+                # SAMO NASLOV I OCENA - BEZ KARAKTERA
+                if rating > 0:
+                    menu_list.append((f"[Ser] {name} ({year}) {stars} {rating:.1f}", tv))
+                else:
+                    menu_list.append((f"[Ser] {name} ({year})", tv))
+
+        if not menu_list:
+            self["status"].setText("No filmography available")
+            return
+
+        def media_selected(choice):
+            if choice:
+                selected_media = choice[1]
+                media_type = "movie" if selected_media.get('title') else "tv"
+                media_id = selected_media.get('id')
+                media_title = selected_media.get('title') or selected_media.get('name', 'Unknown')
+
+                if media_id:
+                    self["status"].setText(f"Loading {media_title}...")
+                    self.load_media_from_person_profile(media_id, media_type, media_title)
+                else:
+                    self["status"].setText("Error loading media details")
+
+        self.session.openWithCallback(media_selected, ChoiceBox,
+                                      title=f"Filmography: {person_name}",
+                                      list=menu_list)
+
+        def media_selected(choice):
+            if choice:
+                selected_media = choice[1]
+                media_type = "movie" if selected_media.get('title') else "tv"
+                media_id = selected_media.get('id')
+                media_title = selected_media.get('title') or selected_media.get('name', 'Unknown')
+
+                if media_id:
+                    self["status"].setText(f"Loading {media_title}...")
+                    self.load_media_from_person_profile(media_id, media_type, media_title)
+                else:
+                    self["status"].setText("Error loading media details")
+
+        self.session.openWithCallback(media_selected, ChoiceBox,
+                                      title=f"Filmography: {person_name}",
+                                      list=menu_list)
+
+    def load_media_from_person_profile(self, media_id, media_type, media_title):
+        """Učitava detalje filma/serije iz osobnog profila"""
+        # Sačuvaj trenutni profil kao prethodno stanje
+        self.previous_person_details = getattr(self, 'current_person_details', None)
+        self.previous_person_name = getattr(self, 'current_person_name', None)
+
+        api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
+        if not api_key:
+            self["status"].setText("TMDB API key not set!")
+            return
+
+        # Clear previous results
+        self.display_mode = 0
+        self.show_classic_view()
+        self.clear_display()
+
+        self["status"].setText(f"Loading {media_title}...")
+
+        # Uzmi detalje o mediju
+        details = _get_media_details(media_id, media_type, api_key)
+        if not details:
+            self["status"].setText("Error loading media details")
+            return
+
+        # Prikaži detalje koristeći postojeću metodu
+        person_name = getattr(self, 'current_person_name', 'Filmography')
+        self.display_media_info(details, media_type, f"From: {person_name}")
+
+    def show_main_cast(self):
+        """Prikazuje glavnu glumačku ekipu"""
+        if not hasattr(self, 'current_media_details'):
+            self["status"].setText("No media details available")
+            return
+
+        credits = self.current_media_details.get("credits", {})
+        cast = credits.get("cast", [])[:8]  # Prvih 8 glumaca
+
+        cast_text = "⭐ Main Cast:\n"
+        for i, person in enumerate(cast, 1):
+            character = person.get("character", "")
+            name = person.get("name", "")
+            cast_text += f"{i}. {name}"
+            if character:
+                cast_text += f" as {character}"
+            cast_text += "\n"
+
+        self["cast"].setText(cast_text)
+        self["status"].setText("Main cast displayed")
+
+    def show_full_cast(self):
+        """Prikazuje kompletnu ekipu"""
+        self["status"].setText("Full cast feature coming soon!")
+        # Ovo ćemo implementirati u narednoj fazi
+
+    def auto_cast_explorer(self):
+        """Automatski prikazuje glumce i režisera - MODIFIKOVANA METODA"""
+        # PROVJERA DA LI JE OVO PROFIL GLUMCA/REŽISERA
+        if hasattr(self, 'current_person_details') and self.current_person_details:
+            # Ako je profil osobe - prikaži filmografiju
+            self.show_person_filmography()
+            return
+
+        # PROVJERA DA LI JE OVO FILM/SERIJA
+        if not hasattr(self, 'current_media_details') or not self.current_media_details:
+            self["status"].setText("No media loaded! Use Auto EPG or manual search first.")
+            return
+
+        credits = self.current_media_details.get("credits", {})
+        cast = credits.get("cast", [])
+        crew = credits.get("crew", [])
+
+        # Pronađi režisera
+        directors = [person for person in crew if person.get("job") == "Director"]
+
+        # Napravi listu za ChoiceBox
+        menu_list = []
+
+        # Dodaj režisera
+        if directors:
+            for director in directors[:2]:
+                name = director.get("name", "Unknown")
+                menu_list.append((f"🎬 Director: {name}", director))
+
+        # Dodaj glavne glumce (prva 3-4)
+        main_cast = cast[:4]
+        for i, actor in enumerate(main_cast):
+            name = actor.get("name", "Unknown")
+            character = actor.get("character", "")
+            if character and len(character) > 20:
+                character = character[:20] + "..."
+            menu_list.append((f"⭐ Star: {name} ({character})", actor))
+
+        if not menu_list:
+            self["status"].setText("No cast/director info available")
+            return
+
+        def person_selected(choice):
+            if choice:
+                selected_person = choice[1]
+                person_name = selected_person.get("name", "")
+                person_type = "director" if selected_person.get("job") == "Director" else "actor"
+
+                if person_name:
+                    self["status"].setText(f"Searching {person_type}: {person_name}")
+                    self.tmdb_search_person(person_name, person_type)
+                else:
+                    self["status"].setText("No name found for selected person")
+
+        title = self.current_media_details.get("title") or self.current_media_details.get("name", "Current Media")
+        self.session.openWithCallback(person_selected, ChoiceBox,
+                                      title=f"Cast & Crew: {title}",
+                                      list=menu_list)
+
+    def show_actor_profiles(self):
+        """Prikazuje listu glumaca za odabir profila"""
+        self["status"].setText("Actor profiles feature coming soon!")
+        # Ovo ćemo implementirati u narednoj fazi
+
     def toggle_backdrop_view(self):
         """Toggle između klasičnog prikaza i backdrop prikaza - radi i za manualnu i auto pretragu"""
 
@@ -921,7 +1490,7 @@ class CiefpTMDBMain(Screen):
         self["director"].hide()
         self["plot"].hide()
         self["cast"].hide()
-        self["status"].hide()  # DODAJTE OVO
+        self["status"].hide()
 
         # OSTAVI POSTER VIDLJIV (desna strana ostaje ista)
         self["poster"].show()
@@ -991,15 +1560,7 @@ class CiefpTMDBMain(Screen):
         # Clear previous results
         self.display_mode = 0
         self.show_classic_view()
-        self["title"].setText("")
-        self["duration"].setText("")
-        self["rating"].setText("")
-        self["imdb_rating"].setText("")
-        self["genres"].setText("")
-        self["director"].setText("")
-        self["plot"].setText("")
-        self["cast"].setText("")
-        self["epg_title"].setText("")
+        self.clear_display()
 
         # Search
         self["status"].setText(f"Searching {mode}...")
@@ -1015,8 +1576,16 @@ class CiefpTMDBMain(Screen):
 
         self.media_id = match.get("id")
         self.media_type = media_type
-        self.poster_path = match.get("poster_path")
-        self._display_media_details(match, media_type, api_key)
+
+        # Uzmi detalje i koristi display_media_info umjesto _display_media_details
+        details = _get_media_details(self.media_id, self.media_type, api_key)
+        if not details:
+            self["status"].setText("Error fetching details")
+            self._show_placeholder()
+            return
+
+        # Koristite display_media_info koja pravilno postavlja current_media_details
+        self.display_media_info(details, media_type)
 
     def _display_media_details(self, match, media_type, api_key, epg_info=None):
         details = _get_media_details(self.media_id, self.media_type, api_key)
@@ -1024,7 +1593,11 @@ class CiefpTMDBMain(Screen):
             self["status"].setText("Error fetching details")
             self._show_placeholder()
             return
-			
+
+        # DODAJTE OVO ISPOD return - OVO JE KLJUČNO!
+        self.current_media_details = details  # SPREMITE DETALJE SA CREDITS PODACIMA
+        self.current_media_type = media_type
+
         # ==================== DISPLAY DATA IN PROPER WIDGETS ====================
 
         # Title and year
@@ -1144,18 +1717,72 @@ class CiefpTMDBMain(Screen):
                 download_poster_async(self.poster_path, self.media_id, self.media_type, poster_callback)
         else:
             self._show_placeholder()
-        
+
         backdrop_path = details.get("backdrop_path")
         if backdrop_path and self.media_id:
             self.download_backdrop_async(backdrop_path, self.media_id, media_type, self.backdrop_downloaded)
         else:
             self["backdrop"].hide()
 
-        self["status"].setText("Info loaded")  
-        
+        self["status"].setText("Info loaded")
+
         self.display_mode = 0
         self.show_classic_view()
-    
+
+    def clear_all_and_reset(self):
+        """Resetuje prikaz na početno stanje"""
+        self.clear_display()
+        self._show_placeholder()
+        self["status"].setText("Ready")
+        # Resetujte sve atribute
+        self.current_media_details = None
+        self.current_media_type = None
+        self.current_backdrop_path = None
+        self.current_person_details = None
+        self.current_person_name = None
+        self.display_mode = 0
+        self.show_classic_view()
+        self["epg_title"].setText("")
+
+    def back_from_person_profile(self):
+        """Vraća se sa profila osobe na prethodni medij"""
+        # Resetuj profil osobe
+        self.current_person_details = None
+        self.current_person_name = None
+
+        # Ako postoji prethodni medij, vrati se na njega
+        if hasattr(self, 'current_media_details') and self.current_media_details is not None:
+            self["status"].setText("Returned to media view")
+            # Ažuriraj prikaz sa postojećim medijem
+            if hasattr(self, 'current_media_type'):
+                self.display_media_info(self.current_media_details, self.current_media_type)
+        else:
+            # Ako nema prethodnog medija, resetuj na početno
+            self.clear_all_and_reset()
+
+    def keyBack(self):
+        """Handle back/exit button - step back in navigation"""
+        # Ako smo na glavnom ekranu i imamo učitane podatke, resetuj prikaz
+        if hasattr(self, 'current_media_details') and self.current_media_details is not None:
+            self.clear_all_and_reset()
+            return
+
+        # Ako smo na profilu osobe, vrati se na prethodni medij (ako postoji)
+        if hasattr(self, 'current_person_details') and self.current_person_details is not None:
+            self.back_from_person_profile()
+            return
+
+        # Ako nema ničega za resetovanje, zatvori plugin
+        self.close()
+
+    def keyUp(self):
+        """Scroll up - trenutno ne radi sa običnim Label"""
+        pass
+
+    def keyDown(self):
+        """Scroll down - trenutno ne radi sa običnim Label"""
+        pass
+
     def open_settings(self):
         self.session.open(SettingsScreen)    
 
