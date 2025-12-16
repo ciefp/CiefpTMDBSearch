@@ -80,7 +80,7 @@ config.plugins.ciefptmdb.show_imdb_rating = ConfigYesNo(default=True)  # DODAJEM
 # plugin dir and files
 PLUGIN_NAME = "CiefpTMDBSearch"
 PLUGIN_DESC = "TMDB search for movies and series with poster, rating, actors and description"
-PLUGIN_VERSION = "1.6"
+PLUGIN_VERSION = "1.7"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else "/usr/lib/enigma2/python/Plugins/Extensions/CiefpTMDBSearch"
 API_KEY_FILE = os.path.join(PLUGIN_DIR, "tmdbapikey.txt")
 OMDB_API_KEY_FILE = os.path.join(PLUGIN_DIR, "omdbapikey.txt")  # DODAJEMO OMDb API fajl
@@ -295,6 +295,67 @@ def _get_media_details(media_id, media_type, api_key):
         print(f"[TMDB] Details error: {e}")
         return None
 
+# ---------- TMDB ADVANCED SEARCH POPULAR ----------
+def get_popular_movies(api_key, page=1):
+    """Dobija listu popularnih filmova (20 po stranici)"""
+    try:
+        language = config.plugins.ciefptmdb.language.value
+        url = f"https://api.themoviedb.org/3/movie/popular?api_key={api_key}&language={language}&page={page}"
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        return data.get("results", [])[:20]  # Vrati maksimalno 20
+    except Exception as e:
+        print(f"[TMDB] Popular movies error: {e}")
+        return []
+
+def get_popular_tv(api_key, page=1):
+    """Dobija listu popularnih serija (20 po stranici)"""
+    try:
+        language = config.plugins.ciefptmdb.language.value
+        url = f"https://api.themoviedb.org/3/tv/popular?api_key={api_key}&language={language}&page={page}"
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        return data.get("results", [])[:20]
+    except Exception as e:
+        print(f"[TMDB] Popular TV error: {e}")
+        return []
+        
+def get_popular_persons(api_key, page=1):
+    """Dobija listu najpopularnijih osoba (glumci, režiseri...) – 20 po stranici"""
+    try:
+        language = config.plugins.ciefptmdb.language.value
+        url = f"https://api.themoviedb.org/3/person/popular?api_key={api_key}&language={language}&page={page}"
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        return data.get("results", [])[:20]
+    except Exception as e:
+        print(f"[TMDB] Popular persons error: {e}")
+        return []    
+
+def get_trending_all(api_key, time_window="day"):
+    """Dobija 20 trending filmova/serija/osoba (mješovito)"""
+    try:
+        language = config.plugins.ciefptmdb.language.value
+        url = f"https://api.themoviedb.org/3/trending/all/{time_window}?api_key={api_key}&language={language}"
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        return data.get("results", [])[:20]
+    except Exception as e:
+        print(f"[TMDB] Trending error: {e}")
+        return []
+        
 # ---------- TMDB ADVANCED HELPERS ----------
 def _search_tmdb_person(name, api_key=None):
     """Pretraga glumaca i direktora"""
@@ -962,10 +1023,14 @@ class CiefpTMDBMain(Screen):
         from Screens.ChoiceBox import ChoiceBox
 
         menu_list = [
-            ("Search Movies", "movies"),
-            ("Search TV Series", "series"),
-            ("Search Actors", "actors"),
-            ("Search Directors", "directors")
+            ("1. Search Movies", "movies"),
+            ("2. Search TV Series", "series"),
+            ("3. Search Actors", "actors"),
+            ("4. Search Directors", "directors"),
+            ("5. Search popular Movies", "popular_movies"),
+            ("6. Search popular Series", "popular_series"),
+            ("7. Search popular Persons", "popular_persons"),
+            ("8. Search trending All (Daily)", "trending_all")
         ]
 
         def search_callback(choice):
@@ -978,6 +1043,14 @@ class CiefpTMDBMain(Screen):
                     self.search_actors()
                 elif choice[1] == "directors":
                     self.search_directors()
+                elif choice[1] == "popular_movies":
+                    self.search_popular_movies()
+                elif choice[1] == "popular_series":
+                    self.search_popular_series()
+                elif choice[1] == "popular_persons":                 # ← NOVO
+                    self.search_popular_persons()
+                elif choice[1] == "trending_all":
+                    self.search_trending_all()
 
         self.session.openWithCallback(search_callback, ChoiceBox,
                                       title="Advanced Search - Select Type",
@@ -1033,6 +1106,264 @@ class CiefpTMDBMain(Screen):
         self.session.openWithCallback(callback, VirtualKeyBoard,
                                       title="Search Directors", text="")
 
+    def search_popular_movies(self):
+        """Prikazuje 20 najpopularnijih filmova u ChoiceBox-u"""
+        api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
+        if not api_key:
+            self["status"].setText("TMDB API key not set!")
+            return
+
+        self["status"].setText("Loading popular movies...")
+        movies = get_popular_movies(api_key)
+
+        if not movies:
+            self["status"].setText("No popular movies found")
+            return
+
+        menu_list = []
+        for movie in movies:
+            title = movie.get("title", "N/A")
+            year = movie.get("release_date", "")[:4]
+            rating = movie.get("vote_average", 0)
+
+            # Format ocene sa zvezdicama
+            if rating >= 8:
+                stars = "★★★★★"
+            elif rating >= 7:
+                stars = "★★★★☆"
+            elif rating >= 6:
+                stars = "★★★☆☆"
+            elif rating >= 5:
+                stars = "★★☆☆☆"
+            elif rating > 0:
+                stars = "★☆☆☆☆"
+            else:
+                stars = "☆☆☆☆☆"
+
+            display_text = f"[Mov] {title} ({year}) {stars}"
+            if rating > 0:
+                display_text += f" {rating:.1f}"
+            menu_list.append((display_text, movie, "movie"))
+
+        def selected_callback(choice):
+            if choice:
+                selected = choice[1]
+                media_id = selected.get("id")
+                title = selected.get("title", "Unknown")
+                self["status"].setText(f"Loading {title}...")
+                details = _get_media_details(media_id, "movie", api_key)
+                if details:
+                    self.display_media_info(details, "movie")
+
+        self.session.openWithCallback(selected_callback, ChoiceBox,
+                                      title="Popular Movies (TMDB)",
+                                      list=menu_list)
+
+    def search_popular_series(self):
+        """Prikazuje 20 najpopularnijih serija u ChoiceBox-u"""
+        api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
+        if not api_key:
+            self["status"].setText("TMDB API key not set!")
+            return
+
+        self["status"].setText("Loading popular series...")
+        series = get_popular_tv(api_key)
+
+        if not series:
+            self["status"].setText("No popular series found")
+            return
+
+        menu_list = []
+        for tv in series:
+            name = tv.get("name", "N/A")
+            year = tv.get("first_air_date", "")[:4]
+            rating = tv.get("vote_average", 0)
+
+            # Format ocene sa zvezdicama
+            if rating >= 8:
+                stars = "★★★★★"
+            elif rating >= 7:
+                stars = "★★★★☆"
+            elif rating >= 6:
+                stars = "★★★☆☆"
+            elif rating >= 5:
+                stars = "★★☆☆☆"
+            elif rating > 0:
+                stars = "★☆☆☆☆"
+            else:
+                stars = "☆☆☆☆☆"
+
+            display_text = f"[Ser] {name} ({year}) {stars}"
+            if rating > 0:
+                display_text += f" {rating:.1f}"
+            menu_list.append((display_text, tv, "tv"))
+
+        def selected_callback(choice):
+            if choice:
+                selected = choice[1]
+                media_id = selected.get("id")
+                title = selected.get("name", "Unknown")
+                self["status"].setText(f"Loading {title}...")
+                details = _get_media_details(media_id, "tv", api_key)
+                if details:
+                    self.display_media_info(details, "tv")
+
+        self.session.openWithCallback(selected_callback, ChoiceBox,
+                                      title="Popular Series (TMDB)",
+                                      list=menu_list)
+
+    def search_popular_persons(self):
+        """Prikazuje 20 najpopularnijih osoba u ChoiceBox-u"""
+        api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
+        if not api_key:
+            self["status"].setText("TMDB API key not set!")
+            return
+
+        self["status"].setText("Loading popular persons...")
+        persons = get_popular_persons(api_key)
+
+        if not persons:
+            self["status"].setText("No popular persons found")
+            return
+
+        menu_list = []
+        for person in persons:
+            name = person.get("name", "N/A")
+            known_for = person.get("known_for_department", "")
+            popularity = person.get("popularity", 0)
+
+            # Prikaz poznatih uloga/filmova (kratko)
+            known_titles = []
+            for item in person.get("known_for", [])[:3]:
+                if item["media_type"] == "movie":
+                    title = item.get("title", "")
+                    year = item.get("release_date", "")[:4]
+                else:
+                    title = item.get("name", "")
+                    year = item.get("first_air_date", "")[:4]
+                if title and year:
+                    known_titles.append(f"{title} ({year})")
+                elif title:
+                    known_titles.append(title)
+
+            known_str = ", ".join(known_titles) if known_titles else "N/A"
+
+            # Format popularnosti sa zvezdicama
+            if popularity >= 50:
+                stars = "★★★★★"
+            elif popularity >= 30:
+                stars = "★★★★☆"
+            elif popularity >= 20:
+                stars = "★★★☆☆"
+            elif popularity >= 10:
+                stars = "★★☆☆☆"
+            elif popularity > 0:
+                stars = "★☆☆☆☆"
+            else:
+                stars = "☆☆☆☆☆"
+
+            display_text = f"[Person] {name} • {known_for} {stars}"
+            if popularity > 0:
+                display_text += f" {popularity:.1f}"
+            menu_list.append((display_text, person))
+
+        def selected_callback(choice):
+            if choice:
+                selected = choice[1]
+                person_id = selected.get("id")
+                person_name = selected.get("name", "Unknown")
+                person_type = selected.get("known_for_department", "Acting")  # ← Dodato
+                self["status"].setText(f"Loading {person_name}...")
+                details = _get_person_details(person_id, api_key)
+                if details:
+                    self.display_person_info(details, api_key, person_type)  # ← Sada 3 argumenta
+
+        self.session.openWithCallback(selected_callback, ChoiceBox,
+                                      title="Popular Persons (TMDB)",
+                                      list=menu_list)
+
+    def search_trending_all(self):
+        """Prikazuje 20 trending naslova/osoba dnevno (mješovito)"""
+        api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
+        if not api_key:
+            self["status"].setText("TMDB API key not set!")
+            return
+
+        self["status"].setText("Loading trending...")
+        results = get_trending_all(api_key, "day")
+
+        if not results:
+            self["status"].setText("No trending results")
+            return
+
+        menu_list = []
+        for item in results:
+            media_type = item.get("media_type", "")
+            if media_type == "movie":
+                title = item.get("title", "N/A")
+                year = item.get("release_date", "")[:4]
+                prefix = "[Mov]"
+            elif media_type == "tv":
+                title = item.get("name", "N/A")
+                year = item.get("first_air_date", "")[:4]
+                prefix = "[Ser]"
+            elif media_type == "person":
+                title = item.get("name", "N/A")
+                known_for = item.get("known_for_department", "")
+                prefix = f"[Person] {title} • {known_for}"
+                # Za osobe nema godine, pa preskočimo
+                year = ""
+            else:
+                continue
+
+            rating = item.get("vote_average", 0) if media_type != "person" else item.get("popularity", 0)
+
+            # Zvezdice
+            if rating >= 8 or (media_type == "person" and rating >= 50):
+                stars = "★★★★★"
+            elif rating >= 7 or (media_type == "person" and rating >= 30):
+                stars = "★★★★☆"
+            elif rating >= 6 or (media_type == "person" and rating >= 20):
+                stars = "★★★☆☆"
+            elif rating >= 5 or (media_type == "person" and rating >= 10):
+                stars = "★★☆☆☆"
+            elif rating > 0:
+                stars = "★☆☆☆☆"
+            else:
+                stars = "☆☆☆☆☆"
+
+            if media_type == "person":
+                display_text = f"{prefix} {stars} {rating:.1f}"
+            else:
+                display_text = f"{prefix} {title} ({year}) {stars}"
+                if rating > 0:
+                    display_text += f" {rating:.1f}"
+
+            menu_list.append((display_text, item, media_type))
+
+        def selected_callback(choice):
+            if choice:
+                selected, m_type = choice[1], choice[2]
+                if m_type == "person":
+                    person_id = selected.get("id")
+                    person_name = selected.get("name", "Unknown")
+                    person_type = selected.get("known_for_department", "Acting")
+                    self["status"].setText(f"Loading {person_name}...")
+                    details = _get_person_details(person_id, api_key)
+                    if details:
+                        self.display_person_info(details, api_key, person_type)
+                else:
+                    media_id = selected.get("id")
+                    title = selected.get("title") or selected.get("name", "Unknown")
+                    self["status"].setText(f"Loading {title}...")
+                    details = _get_media_details(media_id, m_type, api_key)
+                    if details:
+                        self.display_media_info(details, m_type)
+
+        self.session.openWithCallback(selected_callback, ChoiceBox,
+                                      title="Trending All - Daily (TMDB)",
+                                      list=menu_list)
+        
     def tmdb_search_person(self, query, person_type):
         """TMDB pretraga osoba"""
         api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
