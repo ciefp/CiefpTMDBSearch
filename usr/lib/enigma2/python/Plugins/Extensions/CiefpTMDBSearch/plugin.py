@@ -79,8 +79,8 @@ config.plugins.ciefptmdb.show_imdb_rating = ConfigYesNo(default=True)  # DODAJEM
 
 # plugin dir and files
 PLUGIN_NAME = "CiefpTMDBSearch"
-PLUGIN_DESC = "TMDB search for movies and series with poster, rating, actors and description"
-PLUGIN_VERSION = "1.7"
+PLUGIN_DESC = "TMDB search with Popular, Trending and Top Rated sections"
+PLUGIN_VERSION = "1.8"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else "/usr/lib/enigma2/python/Plugins/Extensions/CiefpTMDBSearch"
 API_KEY_FILE = os.path.join(PLUGIN_DIR, "tmdbapikey.txt")
 OMDB_API_KEY_FILE = os.path.join(PLUGIN_DIR, "omdbapikey.txt")  # DODAJEMO OMDb API fajl
@@ -354,6 +354,36 @@ def get_trending_all(api_key, time_window="day"):
         return data.get("results", [])[:20]
     except Exception as e:
         print(f"[TMDB] Trending error: {e}")
+        return []
+
+def get_top_rated_movies(api_key, page=1):
+    """Dobija 20 najbolje ocenjenih filmova"""
+    try:
+        language = config.plugins.ciefptmdb.language.value
+        url = f"https://api.themoviedb.org/3/movie/top_rated?api_key={api_key}&language={language}&page={page}"
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        return data.get("results", [])[:20]
+    except Exception as e:
+        print(f"[TMDB] Top rated movies error: {e}")
+        return []
+
+def get_top_rated_tv(api_key, page=1):
+    """Dobija 20 najbolje ocenjenih serija"""
+    try:
+        language = config.plugins.ciefptmdb.language.value
+        url = f"https://api.themoviedb.org/3/tv/top_rated?api_key={api_key}&language={language}&page={page}"
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        return data.get("results", [])[:20]
+    except Exception as e:
+        print(f"[TMDB] Top rated TV error: {e}")
         return []
         
 # ---------- TMDB ADVANCED HELPERS ----------
@@ -1030,7 +1060,9 @@ class CiefpTMDBMain(Screen):
             ("5. Search popular Movies", "popular_movies"),
             ("6. Search popular Series", "popular_series"),
             ("7. Search popular Persons", "popular_persons"),
-            ("8. Search trending All (Daily)", "trending_all")
+            ("8. Search trending All (Daily)", "trending_all"),
+            ("9. Search Top Rated Movies", "top_rated_movies"),      # ← NOVO
+            ("10. Search Top Rated Series", "top_rated_series")      # ← NOVO
         ]
 
         def search_callback(choice):
@@ -1047,10 +1079,14 @@ class CiefpTMDBMain(Screen):
                     self.search_popular_movies()
                 elif choice[1] == "popular_series":
                     self.search_popular_series()
-                elif choice[1] == "popular_persons":                 # ← NOVO
+                elif choice[1] == "popular_persons":
                     self.search_popular_persons()
                 elif choice[1] == "trending_all":
                     self.search_trending_all()
+                elif choice[1] == "top_rated_movies":                    # ← NOVO
+                    self.search_top_rated_movies()
+                elif choice[1] == "top_rated_series":                    # ← NOVO
+                    self.search_top_rated_series()
 
         self.session.openWithCallback(search_callback, ChoiceBox,
                                       title="Advanced Search - Select Type",
@@ -1362,6 +1398,103 @@ class CiefpTMDBMain(Screen):
 
         self.session.openWithCallback(selected_callback, ChoiceBox,
                                       title="Trending All - Daily (TMDB)",
+                                      list=menu_list)
+
+    def search_top_rated_movies(self):
+        """Prikazuje 20 najbolje ocenjenih filmova"""
+        api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
+        if not api_key:
+            self["status"].setText("TMDB API key not set!")
+            return
+
+        self["status"].setText("Loading top rated movies...")
+        movies = get_top_rated_movies(api_key)
+
+        if not movies:
+            self["status"].setText("No top rated movies found")
+            return
+
+        menu_list = []
+        for movie in movies:
+            title = movie.get("title", "N/A")
+            year = movie.get("release_date", "")[:4]
+            rating = movie.get("vote_average", 0)
+
+            # Zvezdice (pošto su top rated, biće uglavnom visoke)
+            if rating >= 9.0:
+                stars = "★★★★★"
+            elif rating >= 8.5:
+                stars = "★★★★☆"
+            elif rating >= 8.0:
+                stars = "★★★★☆"
+            elif rating >= 7.5:
+                stars = "★★★☆☆"
+            else:
+                stars = "★★☆☆☆"
+
+            display_text = f"[Mov] {title} ({year}) {stars} {rating:.1f}"
+            menu_list.append((display_text, movie, "movie"))
+
+        def selected_callback(choice):
+            if choice:
+                selected = choice[1]
+                media_id = selected.get("id")
+                title = selected.get("title", "Unknown")
+                self["status"].setText(f"Loading {title}...")
+                details = _get_media_details(media_id, "movie", api_key)
+                if details:
+                    self.display_media_info(details, "movie")
+
+        self.session.openWithCallback(selected_callback, ChoiceBox,
+                                      title="Top Rated Movies (TMDB)",
+                                      list=menu_list)
+
+    def search_top_rated_series(self):
+        """Prikazuje 20 najbolje ocenjenih serija"""
+        api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
+        if not api_key:
+            self["status"].setText("TMDB API key not set!")
+            return
+
+        self["status"].setText("Loading top rated series...")
+        series = get_top_rated_tv(api_key)
+
+        if not series:
+            self["status"].setText("No top rated series found")
+            return
+
+        menu_list = []
+        for tv in series:
+            name = tv.get("name", "N/A")
+            year = tv.get("first_air_date", "")[:4]
+            rating = tv.get("vote_average", 0)
+
+            if rating >= 9.0:
+                stars = "★★★★★"
+            elif rating >= 8.5:
+                stars = "★★★★☆"
+            elif rating >= 8.0:
+                stars = "★★★★☆"
+            elif rating >= 7.5:
+                stars = "★★★☆☆"
+            else:
+                stars = "★★☆☆☆"
+
+            display_text = f"[Ser] {name} ({year}) {stars} {rating:.1f}"
+            menu_list.append((display_text, tv, "tv"))
+
+        def selected_callback(choice):
+            if choice:
+                selected = choice[1]
+                media_id = selected.get("id")
+                title = selected.get("name", "Unknown")
+                self["status"].setText(f"Loading {title}...")
+                details = _get_media_details(media_id, "tv", api_key)
+                if details:
+                    self.display_media_info(details, "tv")
+
+        self.session.openWithCallback(selected_callback, ChoiceBox,
+                                      title="Top Rated Series (TMDB)",
                                       list=menu_list)
         
     def tmdb_search_person(self, query, person_type):
