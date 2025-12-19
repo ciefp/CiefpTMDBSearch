@@ -80,7 +80,7 @@ config.plugins.ciefptmdb.show_imdb_rating = ConfigYesNo(default=True)  # DODAJEM
 # plugin dir and files
 PLUGIN_NAME = "CiefpTMDBSearch"
 PLUGIN_DESC = "TMDB search with Popular, Trending and Top Rated sections"
-PLUGIN_VERSION = "1.8"
+PLUGIN_VERSION = "1.9"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else "/usr/lib/enigma2/python/Plugins/Extensions/CiefpTMDBSearch"
 API_KEY_FILE = os.path.join(PLUGIN_DIR, "tmdbapikey.txt")
 OMDB_API_KEY_FILE = os.path.join(PLUGIN_DIR, "omdbapikey.txt")  # DODAJEMO OMDb API fajl
@@ -384,6 +384,21 @@ def get_top_rated_tv(api_key, page=1):
         return data.get("results", [])[:20]
     except Exception as e:
         print(f"[TMDB] Top rated TV error: {e}")
+        return []
+
+def get_upcoming_movies(api_key, page=1):
+    """Dobija 20 predstojećih filmova"""
+    try:
+        language = config.plugins.ciefptmdb.language.value
+        url = f"https://api.themoviedb.org/3/movie/upcoming?api_key={api_key}&language={language}&page={page}"
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        return data.get("results", [])[:20]
+    except Exception as e:
+        print(f"[TMDB] Upcoming movies error: {e}")
         return []
         
 # ---------- TMDB ADVANCED HELPERS ----------
@@ -1061,8 +1076,9 @@ class CiefpTMDBMain(Screen):
             ("6. Search popular Series", "popular_series"),
             ("7. Search popular Persons", "popular_persons"),
             ("8. Search trending All (Daily)", "trending_all"),
-            ("9. Search Top Rated Movies", "top_rated_movies"),      # ← NOVO
-            ("10. Search Top Rated Series", "top_rated_series")      # ← NOVO
+            ("9. Search Top Rated Movies", "top_rated_movies"),       # ← NOVO
+            ("10. Search Top Rated Series", "top_rated_series"),      # ← NOVO
+            ("11. Search Upcoming Movies", "upcoming_movies")         # ← NOVO
         ]
 
         def search_callback(choice):
@@ -1087,6 +1103,8 @@ class CiefpTMDBMain(Screen):
                     self.search_top_rated_movies()
                 elif choice[1] == "top_rated_series":                    # ← NOVO
                     self.search_top_rated_series()
+                elif choice[1] == "upcoming_movies":               # ← NOVO
+                    self.search_upcoming_movies()
 
         self.session.openWithCallback(search_callback, ChoiceBox,
                                       title="Advanced Search - Select Type",
@@ -1246,6 +1264,70 @@ class CiefpTMDBMain(Screen):
 
         self.session.openWithCallback(selected_callback, ChoiceBox,
                                       title="Popular Series (TMDB)",
+                                      list=menu_list)
+
+    def search_upcoming_movies(self):
+        """Prikazuje 20 predstojećih filmova"""
+        api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
+        if not api_key:
+            self["status"].setText("TMDB API key not set!")
+            return
+
+        self["status"].setText("Loading upcoming movies...")
+        movies = get_upcoming_movies(api_key)
+
+        if not movies:
+            self["status"].setText("No upcoming movies found")
+            return
+
+        menu_list = []
+        for movie in movies:
+            title = movie.get("title", "N/A")
+            release_date = movie.get("release_date", "")
+            rating = movie.get("vote_average", 0)
+
+            # Format datuma: YYYY-MM-DD → DD.MM.YYYY
+            if release_date and len(release_date) == 10:
+                try:
+                    y, m, d = release_date.split("-")
+                    pretty_date = f"{int(d):02d}.{int(m):02d}.{y}"
+                except:
+                    pretty_date = release_date
+            else:
+                pretty_date = "N/A"
+
+            # Zvezdice
+            if rating >= 8.5:
+                stars = "★★★★★"
+            elif rating >= 7.5:
+                stars = "★★★★☆"
+            elif rating >= 6.5:
+                stars = "★★★☆☆"
+            elif rating >= 5.5:
+                stars = "★★☆☆☆"
+            elif rating > 0:
+                stars = "★☆☆☆☆"
+            else:
+                stars = "☆☆☆☆☆"
+
+            display_text = f"[Upc] {title} ({pretty_date}) {stars}"
+            if rating > 0:
+                display_text += f" {rating:.1f}"
+
+            menu_list.append((display_text, movie, "movie"))
+
+        def selected_callback(choice):
+            if choice:
+                selected = choice[1]
+                media_id = selected.get("id")
+                title = selected.get("title", "Unknown")
+                self["status"].setText(f"Loading {title}...")
+                details = _get_media_details(media_id, "movie", api_key)
+                if details:
+                    self.display_media_info(details, "movie")
+
+        self.session.openWithCallback(selected_callback, ChoiceBox,
+                                      title="Upcoming Movies (TMDB)",
                                       list=menu_list)
 
     def search_popular_persons(self):
