@@ -623,12 +623,11 @@ def get_cache_info():
     cleaned_title = re.sub(r'\s+', ' ', cleaned_title).strip()
     
     return cleaned_title
-    
-
+ 
 # ---------- MAIN SEARCH SCREEN ----------
 class CiefpTMDBMain(Screen):
     skin = """
-        <screen position="center,center" size="1800,1000" title="..:: CiefpTMDBSearch (v{version}) ::..">
+        <screen position="center,center" size="1920,1080" title="..:: CiefpTMDBSearch (v{version}) ::..">
             <!-- EPG Title -->
             <widget name="epg_title" position="50,50" size="900,40" font="Regular;30" foregroundColor="yellow" backgroundColor="background" transparent="1"/>
 
@@ -642,11 +641,11 @@ class CiefpTMDBMain(Screen):
             <widget name="genres" position="50,280" size="1200,40" font="Regular;30" foregroundColor="blue" backgroundColor="background" transparent="1"/>
             <widget name="director" position="50,320" size="1200,40" font="Regular;30" foregroundColor="orange" backgroundColor="background" transparent="1"/>
 
-            <!-- Plot - Vraćamo na običan Label -->
+            <!-- Plot -->
             <widget name="plot" position="50,370" size="1200,300" font="Regular;28" foregroundColor="white" backgroundColor="background" transparent="1" valign="top"/>
 
-            <!-- Cast - Vraćamo na običan Label -->
-            <widget name="cast" position="50,680" size="1200,250" font="Regular;26" foregroundColor="cyan" backgroundColor="background" transparent="1" valign="top"/>
+            <!-- Cast -->
+            <widget name="cast" position="50,650" size="1200,300" font="Regular;26" foregroundColor="cyan" backgroundColor="background" transparent="1" valign="top"/>
 
             <!-- Poster -->
             <widget name="poster" position="1300,100" size="500,750" alphatest="blend" zPosition="2"/>
@@ -655,21 +654,21 @@ class CiefpTMDBMain(Screen):
             <widget name="backdrop" position="50,100" size="1200,720" zPosition="1" alphatest="blend" />
     
             <!-- Status -->
-            <widget name="status" position="1530,910" size="270,60" font="Regular;26" foregroundColor="#00FF00" halign="left" />
+            <widget name="status" position="1530,990" size="270,60" font="Regular;26" foregroundColor="#00FF00" halign="left" />
             
             <!-- Ažurirane oznake za dugmad -->
-            <ePixmap pixmap="buttons/red.png" position="0,920" size="35,35" alphatest="blend" />
-            <eLabel text="Exit" position="50,910" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#800000" halign="center" valign="center" transparent="0" />
-            <ePixmap pixmap="buttons/green.png" position="250,920" size="35,35" alphatest="blend" />
-            <eLabel text="Adv.Search" position="300,910" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#008000" halign="center" valign="center" transparent="0" />
-            <ePixmap pixmap="buttons/yellow.png" position="500,920" size="35,35" alphatest="blend" />
-            <eLabel text="Cast Exp." position="550,910" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#808000" halign="center" valign="center" transparent="0" />
-            <ePixmap pixmap="buttons/blue.png" position="750,920" size="35,35" alphatest="blend" />
-            <eLabel text="Auto EPG" position="800,910" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#000080" halign="center" valign="center" transparent="0" />
-            <ePixmap pixmap="buttons/red.png" position="1000,920" size="35,35" alphatest="blend" />
-            <eLabel text="OK:Backdrop" position="1050,910" size="200,50" font="Regular;24" foregroundColor="white" backgroundColor="#800080" halign="center" valign="center" transparent="0"/>
-            <ePixmap pixmap="buttons/green.png" position="1250,920" size="35,35" alphatest="blend" />
-            <eLabel text="MENU: Settings" position="1300,910" size="200,50" font="Regular;24" foregroundColor="white" backgroundColor="#023030" halign="center" valign="center" transparent="0"/>
+            <ePixmap pixmap="buttons/red.png" position="0,1000" size="35,35" alphatest="blend" />
+            <eLabel text="Exit" position="50,990" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#800000" halign="center" valign="center" transparent="0" />
+            <ePixmap pixmap="buttons/green.png" position="250,1000" size="35,35" alphatest="blend" />
+            <eLabel text="Adv.Search" position="300,990" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#008000" halign="center" valign="center" transparent="0" />
+            <ePixmap pixmap="buttons/yellow.png" position="500,1000" size="35,35" alphatest="blend" />
+            <eLabel text="Cast Exp." position="550,990" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#808000" halign="center" valign="center" transparent="0" />
+            <ePixmap pixmap="buttons/blue.png" position="750,1000" size="35,35" alphatest="blend" />
+            <eLabel text="Auto EPG" position="800,990" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#000080" halign="center" valign="center" transparent="0" />
+            <ePixmap pixmap="buttons/red.png" position="1000,1000" size="35,35" alphatest="blend" />
+            <eLabel text="OK:Backdrop" position="1050,990" size="200,50" font="Regular;24" foregroundColor="white" backgroundColor="#800080" halign="center" valign="center" transparent="0"/>
+            <ePixmap pixmap="buttons/green.png" position="1250,1000" size="35,35" alphatest="blend" />
+            <eLabel text="MENU: Settings" position="1300,990" size="200,50" font="Regular;24" foregroundColor="white" backgroundColor="#023030" halign="center" valign="center" transparent="0"/>
         </screen>
     """.format(version=PLUGIN_VERSION)
 
