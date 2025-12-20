@@ -80,7 +80,7 @@ config.plugins.ciefptmdb.show_imdb_rating = ConfigYesNo(default=True)  # DODAJEM
 # plugin dir and files
 PLUGIN_NAME = "CiefpTMDBSearch"
 PLUGIN_DESC = "TMDB search with Popular, Trending and Top Rated sections"
-PLUGIN_VERSION = "1.9"
+PLUGIN_VERSION = "2.0"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else "/usr/lib/enigma2/python/Plugins/Extensions/CiefpTMDBSearch"
 API_KEY_FILE = os.path.join(PLUGIN_DIR, "tmdbapikey.txt")
 OMDB_API_KEY_FILE = os.path.join(PLUGIN_DIR, "omdbapikey.txt")  # DODAJEMO OMDb API fajl
