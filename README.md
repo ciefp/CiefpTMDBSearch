@@ -1,5 +1,5 @@
 
-# 🎬 CiefpTMDBSearch v1.6 - Enigma2 Plugin
+# 🎬 CiefpTMDBSearch v2.0 - Enigma2 Plugin
 
 ![Plugin Version](https://img.shields.io/badge/Version-1.6-blue.svg)
 ![Python](https://img.shields.io/badge/Python-2.7-green.svg)
