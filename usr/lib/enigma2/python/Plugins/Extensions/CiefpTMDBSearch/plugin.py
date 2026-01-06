@@ -80,7 +80,7 @@ config.plugins.ciefptmdb.show_imdb_rating = ConfigYesNo(default=True)  # DODAJEM
 # plugin dir and files
 PLUGIN_NAME = "CiefpTMDBSearch"
 PLUGIN_DESC = "TMDB search with Popular, Trending and Top Rated sections"
-PLUGIN_VERSION = "2.1"
+PLUGIN_VERSION = "2.2"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else "/usr/lib/enigma2/python/Plugins/Extensions/CiefpTMDBSearch"
 API_KEY_FILE = os.path.join(PLUGIN_DIR, "tmdbapikey.txt")
 OMDB_API_KEY_FILE = os.path.join(PLUGIN_DIR, "omdbapikey.txt")  # DODAJEMO OMDb API fajl
@@ -739,6 +739,7 @@ class CiefpTMDBMain(Screen):
     
             <!-- Status -->
             <widget name="status" position="1530,990" size="270,60" font="Regular;26" foregroundColor="#00FF00" halign="left" />
+            <widget name="status2" position="50,12" size="270,30" font="Regular;26" foregroundColor="#00FF00" halign="left" />
             
             <!-- Ažurirane oznake za dugmad -->
             <ePixmap pixmap="buttons/red.png" position="0,1000" size="35,35" alphatest="blend" />
@@ -770,6 +771,7 @@ class CiefpTMDBMain(Screen):
         self.previous_person_name = None
         self["left_text"] = Label("")
         self["status"] = Label("Ready")
+        self["status2"] = Label("")
         self["epg_title"] = Label("")
         self["title"] = Label("")
         self["duration"] = Label("")
@@ -783,7 +785,7 @@ class CiefpTMDBMain(Screen):
         self["backdrop"] = Pixmap()
 
         # Extended action map - IZBRISALI SMO "info" AKCIJU
-        self["actions"] = ActionMap(["OkCancelActions", "ColorActions", "MenuActions", "DirectionActions"],
+        self["actions"] = ActionMap(["OkCancelActions", "ColorActions", "MenuActions", "DirectionActions", "ChannelSelectBaseActions"],
                                     {
                                         "cancel": self.keyBack,
                                         "ok": self.toggle_backdrop_view,
@@ -793,7 +795,9 @@ class CiefpTMDBMain(Screen):
                                         "blue": self.auto_epg_search,
                                         "menu": self.show_more_options,  # MENU sada otvara dodatne opcije
                                         "up": self.keyUp,
-                                        "down": self.keyDown
+                                        "down": self.keyDown,
+                                        "nextBouquet": self.zapDown,
+                                        "prevBouquet": self.zapUp
                                     }, -1)
 
         self["backdrop"].hide()
@@ -817,9 +821,36 @@ class CiefpTMDBMain(Screen):
         self.container.dataAvail.append(self.version_data_avail)
         self.version_check_in_progress = False
         self.version_buffer = b''
-
+        
         self.onLayoutFinish.append(self.check_for_updates)
+        self.onLayoutFinish.append(self.auto_epg_search)
+        self.onLayoutFinish.append(self.display_service_name)
+    
+    def zapUp(self):
+        from Screens.InfoBar import InfoBar
+        if InfoBar and InfoBar.instance:
+            InfoBar.zapUp(InfoBar.instance)
+            self._show_placeholder()
+            self.clear_all_and_reset()
+            self.display_service_name()
+            self.auto_epg_search()
 
+    def zapDown(self):
+        from Screens.InfoBar import InfoBar
+        if InfoBar and InfoBar.instance:
+            InfoBar.zapDown(InfoBar.instance)
+            self._show_placeholder()
+            self.clear_all_and_reset()
+            self.display_service_name()
+            self.auto_epg_search()
+
+    def display_service_name(self):
+        service_name = self.session.nav.getCurrentService().info().getName()
+        if not service_name:
+            return None
+        print ("%s" % service_name)
+        self["status2"].setText(str(service_name))
+    
     def show_more_options(self):
         """Prikazuje dodatne opcije preko MENU dugmeta - zamenio Settings"""
         from Screens.ChoiceBox import ChoiceBox
@@ -3134,10 +3165,5 @@ def main(session, **kwargs):
     
 def Plugins(**kwargs):
     icon = PLUGIN_ICON if os.path.exists(PLUGIN_ICON) and LoadPixmap(PLUGIN_ICON) else None
-    return [PluginDescriptor(
-        name="{0} v{1}".format(PLUGIN_NAME, PLUGIN_VERSION),
-        description=PLUGIN_DESC,
-        where=PluginDescriptor.WHERE_PLUGINMENU,
-        icon=PLUGIN_ICON,
-        fnc=main
-    )]
+    return [PluginDescriptor(name="{0} v{1}".format(PLUGIN_NAME, PLUGIN_VERSION), description=PLUGIN_DESC, icon=PLUGIN_ICON, where=PluginDescriptor.WHERE_PLUGINMENU, fnc=main),
+        PluginDescriptor(name="{0} v{1}".format(PLUGIN_NAME, PLUGIN_VERSION), where=PluginDescriptor.WHERE_CHANNEL_CONTEXT_MENU, fnc=main)]
