@@ -80,7 +80,7 @@ config.plugins.ciefptmdb.show_imdb_rating = ConfigYesNo(default=True)  # DODAJEM
 # plugin dir and files
 PLUGIN_NAME = "CiefpTMDBSearch"
 PLUGIN_DESC = "TMDB search with Popular, Trending and Top Rated sections"
-PLUGIN_VERSION = "2.2"
+PLUGIN_VERSION = "2.3"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else "/usr/lib/enigma2/python/Plugins/Extensions/CiefpTMDBSearch"
 API_KEY_FILE = os.path.join(PLUGIN_DIR, "tmdbapikey.txt")
 OMDB_API_KEY_FILE = os.path.join(PLUGIN_DIR, "omdbapikey.txt")  # DODAJEMO OMDb API fajl
@@ -295,9 +295,33 @@ def _get_media_details(media_id, media_type, api_key):
         print(f"[TMDB] Details error: {e}")
         return None
 
+def get_double_page_results(api_key, endpoint, page=1):
+    """Uzima rezultate sa dve stranice odjednom za ukupno do 40 rezultata"""
+    try:
+        results = []
+
+        # Prva strana
+        url1 = f"https://api.themoviedb.org/3/{endpoint}?api_key={api_key}&language={config.plugins.ciefptmdb.language.value}&page={page}"
+        with urllib.request.urlopen(url1, context=ssl._create_unverified_context(), timeout=10) as resp:
+            data1 = json.loads(resp.read().decode("utf-8", errors="ignore"))
+            results.extend(data1.get("results", []))
+
+        # Druga strana (samo ako prva ima rezultate)
+        if results:
+            url2 = f"https://api.themoviedb.org/3/{endpoint}?api_key={api_key}&language={config.plugins.ciefptmdb.language.value}&page={page + 1}"
+            with urllib.request.urlopen(url2, context=ssl._create_unverified_context(), timeout=10) as resp:
+                data2 = json.loads(resp.read().decode("utf-8", errors="ignore"))
+                results.extend(data2.get("results", []))
+
+        return results[:40]  # Maksimum 40 rezultata
+    except Exception as e:
+        print(f"[TMDB] Double page error for {endpoint}: {e}")
+        return []
+    
+
 # ---------- TMDB ADVANCED SEARCH POPULAR ----------
+# U svim get_ funkcijama promenite [:20] u [:40]
 def get_popular_movies(api_key, page=1):
-    """Dobija listu popularnih filmova (20 po stranici)"""
     try:
         language = config.plugins.ciefptmdb.language.value
         url = f"https://api.themoviedb.org/3/movie/popular?api_key={api_key}&language={language}&page={page}"
@@ -306,13 +330,17 @@ def get_popular_movies(api_key, page=1):
         ctx.verify_mode = ssl.CERT_NONE
         with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="ignore"))
-        return data.get("results", [])[:20]  # Vrati maksimalno 20
+
+        results = data.get("results", [])
+        print(f"[DEBUG] API vratio {len(results)} rezultata")
+        print(f"[DEBUG] Prvi rezultat: {results[0].get('title', 'N/A') if results else 'N/A'}")
+
+        return results[:40]  # PROMENJENO SA 20 NA 40
     except Exception as e:
         print(f"[TMDB] Popular movies error: {e}")
         return []
 
 def get_popular_tv(api_key, page=1):
-    """Dobija listu popularnih serija (20 po stranici)"""
     try:
         language = config.plugins.ciefptmdb.language.value
         url = f"https://api.themoviedb.org/3/tv/popular?api_key={api_key}&language={language}&page={page}"
@@ -321,28 +349,12 @@ def get_popular_tv(api_key, page=1):
         ctx.verify_mode = ssl.CERT_NONE
         with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="ignore"))
-        return data.get("results", [])[:20]
+        return data.get("results", [])[:40]  # PROMENJENO SA 20 NA 40
     except Exception as e:
         print(f"[TMDB] Popular TV error: {e}")
         return []
-        
-def get_popular_persons(api_key, page=1):
-    """Dobija listu najpopularnijih osoba (glumci, režiseri...) – 20 po stranici"""
-    try:
-        language = config.plugins.ciefptmdb.language.value
-        url = f"https://api.themoviedb.org/3/person/popular?api_key={api_key}&language={language}&page={page}"
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
-        return data.get("results", [])[:20]
-    except Exception as e:
-        print(f"[TMDB] Popular persons error: {e}")
-        return []    
 
 def get_trending_all(api_key, time_window="day"):
-    """Dobija 20 trending filmova/serija/osoba (mješovito)"""
     try:
         language = config.plugins.ciefptmdb.language.value
         url = f"https://api.themoviedb.org/3/trending/all/{time_window}?api_key={api_key}&language={language}"
@@ -351,13 +363,12 @@ def get_trending_all(api_key, time_window="day"):
         ctx.verify_mode = ssl.CERT_NONE
         with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="ignore"))
-        return data.get("results", [])[:20]
+        return data.get("results", [])[:40]  # PROMENJENO SA 20 NA 40
     except Exception as e:
         print(f"[TMDB] Trending error: {e}")
         return []
 
 def get_top_rated_movies(api_key, page=1):
-    """Dobija 20 najbolje ocenjenih filmova"""
     try:
         language = config.plugins.ciefptmdb.language.value
         url = f"https://api.themoviedb.org/3/movie/top_rated?api_key={api_key}&language={language}&page={page}"
@@ -366,13 +377,12 @@ def get_top_rated_movies(api_key, page=1):
         ctx.verify_mode = ssl.CERT_NONE
         with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="ignore"))
-        return data.get("results", [])[:20]
+        return data.get("results", [])[:40]  # PROMENJENO SA 20 NA 40
     except Exception as e:
         print(f"[TMDB] Top rated movies error: {e}")
         return []
 
 def get_top_rated_tv(api_key, page=1):
-    """Dobija 20 najbolje ocenjenih serija"""
     try:
         language = config.plugins.ciefptmdb.language.value
         url = f"https://api.themoviedb.org/3/tv/top_rated?api_key={api_key}&language={language}&page={page}"
@@ -381,13 +391,12 @@ def get_top_rated_tv(api_key, page=1):
         ctx.verify_mode = ssl.CERT_NONE
         with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="ignore"))
-        return data.get("results", [])[:20]
+        return data.get("results", [])[:40]  # PROMENJENO SA 20 NA 40
     except Exception as e:
         print(f"[TMDB] Top rated TV error: {e}")
         return []
 
 def get_upcoming_movies(api_key, page=1):
-    """Dobija 20 predstojećih filmova"""
     try:
         language = config.plugins.ciefptmdb.language.value
         url = f"https://api.themoviedb.org/3/movie/upcoming?api_key={api_key}&language={language}&page={page}"
@@ -396,9 +405,359 @@ def get_upcoming_movies(api_key, page=1):
         ctx.verify_mode = ssl.CERT_NONE
         with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="ignore"))
-        return data.get("results", [])[:20]
+        return data.get("results", [])[:40]  # PROMENJENO SA 20 NA 40
     except Exception as e:
         print(f"[TMDB] Upcoming movies error: {e}")
+        return []
+
+def get_popular_persons(api_key, page=1):
+    try:
+        language = config.plugins.ciefptmdb.language.value
+        url = f"https://api.themoviedb.org/3/person/popular?api_key={api_key}&language={language}&page={page}"
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        return data.get("results", [])[:40]  # PROMENJENO SA 20 NA 40
+    except Exception as e:
+        print(f"[TMDB] Popular persons error: {e}")
+        return []
+
+
+# ---------- NOVE FUNKCIJE ZA 40 REZULTATA ----------
+def get_popular_movies_40(api_key):
+    """Dobija 40 najpopularnijih filmova (2 stranice)"""
+    try:
+        results = []
+
+        # Prva strana (1-20)
+        movies_page1 = get_popular_movies(api_key, page=1)
+        if movies_page1:
+            results.extend(movies_page1)
+
+        # Druga strana (21-40) - ako prva ima rezultate
+        if results:
+            movies_page2 = get_popular_movies(api_key, page=2)
+            if movies_page2:
+                results.extend(movies_page2)
+
+        # Ukloni duplikate (ako ih ima) i vrati do 40
+        unique_results = []
+        seen_ids = set()
+        for movie in results:
+            movie_id = movie.get("id")
+            if movie_id not in seen_ids:
+                seen_ids.add(movie_id)
+                unique_results.append(movie)
+
+        print(f"[DEBUG] Popular movies 40: vraćeno {len(unique_results)} rezultata")
+        return unique_results[:40]
+    except Exception as e:
+        print(f"[TMDB] Popular movies 40 error: {e}")
+        return []
+
+
+def get_popular_tv_40(api_key):
+    """Dobija 40 najpopularnijih serija (2 stranice)"""
+    try:
+        results = []
+
+        # Prva strana
+        tv_page1 = get_popular_tv(api_key, page=1)
+        if tv_page1:
+            results.extend(tv_page1)
+
+        # Druga strana
+        if results:
+            tv_page2 = get_popular_tv(api_key, page=2)
+            if tv_page2:
+                results.extend(tv_page2)
+
+        # Ukloni duplikate
+        unique_results = []
+        seen_ids = set()
+        for tv in results:
+            tv_id = tv.get("id")
+            if tv_id not in seen_ids:
+                seen_ids.add(tv_id)
+                unique_results.append(tv)
+
+        print(f"[DEBUG] Popular TV 40: vraćeno {len(unique_results)} rezultata")
+        return unique_results[:40]
+    except Exception as e:
+        print(f"[TMDB] Popular TV 40 error: {e}")
+        return []
+
+
+def get_top_rated_movies_40(api_key):
+    """Dobija 40 najbolje ocenjenih filmova (2 stranice)"""
+    try:
+        results = []
+
+        # Prva strana
+        movies_page1 = get_top_rated_movies(api_key, page=1)
+        if movies_page1:
+            results.extend(movies_page1)
+
+        # Druga strana
+        if results:
+            movies_page2 = get_top_rated_movies(api_key, page=2)
+            if movies_page2:
+                results.extend(movies_page2)
+
+        # Ukloni duplikate
+        unique_results = []
+        seen_ids = set()
+        for movie in results:
+            movie_id = movie.get("id")
+            if movie_id not in seen_ids:
+                seen_ids.add(movie_id)
+                unique_results.append(movie)
+
+        print(f"[DEBUG] Top rated movies 40: vraćeno {len(unique_results)} rezultata")
+        return unique_results[:40]
+    except Exception as e:
+        print(f"[TMDB] Top rated movies 40 error: {e}")
+        return []
+
+
+def get_top_rated_tv_40(api_key):
+    """Dobija 40 najbolje ocenjenih serija (2 stranice)"""
+    try:
+        results = []
+
+        # Prva strana
+        tv_page1 = get_top_rated_tv(api_key, page=1)
+        if tv_page1:
+            results.extend(tv_page1)
+
+        # Druga strana
+        if results:
+            tv_page2 = get_top_rated_tv(api_key, page=2)
+            if tv_page2:
+                results.extend(tv_page2)
+
+        # Ukloni duplikate
+        unique_results = []
+        seen_ids = set()
+        for tv in results:
+            tv_id = tv.get("id")
+            if tv_id not in seen_ids:
+                seen_ids.add(tv_id)
+                unique_results.append(tv)
+
+        print(f"[DEBUG] Top rated TV 40: vraćeno {len(unique_results)} rezultata")
+        return unique_results[:40]
+    except Exception as e:
+        print(f"[TMDB] Top rated TV 40 error: {e}")
+        return []
+
+
+def get_upcoming_movies_40(api_key):
+    """Dobija 40 predstojećih filmova (2 stranice)"""
+    try:
+        results = []
+
+        # Prva strana
+        movies_page1 = get_upcoming_movies(api_key, page=1)
+        if movies_page1:
+            results.extend(movies_page1)
+
+        # Druga strana
+        if results:
+            movies_page2 = get_upcoming_movies(api_key, page=2)
+            if movies_page2:
+                results.extend(movies_page2)
+
+        # Ukloni duplikate
+        unique_results = []
+        seen_ids = set()
+        for movie in results:
+            movie_id = movie.get("id")
+            if movie_id not in seen_ids:
+                seen_ids.add(movie_id)
+                unique_results.append(movie)
+
+        print(f"[DEBUG] Upcoming movies 40: vraćeno {len(unique_results)} rezultata")
+        return unique_results[:40]
+    except Exception as e:
+        print(f"[TMDB] Upcoming movies 40 error: {e}")
+        return []
+
+
+def get_popular_persons_40(api_key):
+    """Dobija 40 najpopularnijih osoba (2 stranice)"""
+    try:
+        results = []
+
+        # Prva strana
+        persons_page1 = get_popular_persons(api_key, page=1)
+        if persons_page1:
+            results.extend(persons_page1)
+
+        # Druga strana
+        if results:
+            persons_page2 = get_popular_persons(api_key, page=2)
+            if persons_page2:
+                results.extend(persons_page2)
+
+        # Ukloni duplikate
+        unique_results = []
+        seen_ids = set()
+        for person in results:
+            person_id = person.get("id")
+            if person_id not in seen_ids:
+                seen_ids.add(person_id)
+                unique_results.append(person)
+
+        print(f"[DEBUG] Popular persons 40: vraćeno {len(unique_results)} rezultata")
+        return unique_results[:40]
+    except Exception as e:
+        print(f"[TMDB] Popular persons 40 error: {e}")
+        return []
+
+
+def get_tv_on_the_air(api_key, page=1):
+    """Dobija serije koje se trenutno emituju"""
+    try:
+        language = config.plugins.ciefptmdb.language.value
+        url = f"https://api.themoviedb.org/3/tv/on_the_air?api_key={api_key}&language={language}&page={page}"
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        return data.get("results", [])[:20]
+    except Exception as e:
+        print(f"[TMDB] TV On The Air error: {e}")
+        return []
+
+def get_tv_on_the_air_40(api_key):
+    """Dobija 40 serija koje se trenutno emituju (2 stranice)"""
+    try:
+        results = []
+
+        # Prva strana
+        tv_page1 = get_tv_on_the_air(api_key, page=1)
+        if tv_page1:
+            results.extend(tv_page1)
+
+        # Druga strana
+        if results:
+            tv_page2 = get_tv_on_the_air(api_key, page=2)
+            if tv_page2:
+                results.extend(tv_page2)
+
+        # Ukloni duplikate
+        unique_results = []
+        seen_ids = set()
+        for tv in results:
+            tv_id = tv.get("id")
+            if tv_id not in seen_ids:
+                seen_ids.add(tv_id)
+                unique_results.append(tv)
+
+        print(f"[DEBUG] TV On The Air 40: vraćeno {len(unique_results)} rezultata")
+        return unique_results[:40]
+    except Exception as e:
+        print(f"[TMDB] TV On The Air 40 error: {e}")
+        return []
+
+
+def get_tv_airing_today(api_key, page=1):
+    """Dobija serije koje se emituju danas"""
+    try:
+        language = config.plugins.ciefptmdb.language.value
+        url = f"https://api.themoviedb.org/3/tv/airing_today?api_key={api_key}&language={language}&page={page}"
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        return data.get("results", [])[:20]
+    except Exception as e:
+        print(f"[TMDB] TV Airing Today error: {e}")
+        return []
+
+
+def get_tv_airing_today_40(api_key):
+    """Dobija 40 serija koje se emituju danas (2 stranice)"""
+    try:
+        results = []
+
+        # Prva strana
+        tv_page1 = get_tv_airing_today(api_key, page=1)
+        if tv_page1:
+            results.extend(tv_page1)
+
+        # Druga strana
+        if results:
+            tv_page2 = get_tv_airing_today(api_key, page=2)
+            if tv_page2:
+                results.extend(tv_page2)
+
+        # Ukloni duplikate
+        unique_results = []
+        seen_ids = set()
+        for tv in results:
+            tv_id = tv.get("id")
+            if tv_id not in seen_ids:
+                seen_ids.add(tv_id)
+                unique_results.append(tv)
+
+        print(f"[DEBUG] TV Airing Today 40: vraćeno {len(unique_results)} rezultata")
+        return unique_results[:40]
+    except Exception as e:
+        print(f"[TMDB] TV Airing Today 40 error: {e}")
+        return []
+
+
+def get_movies_now_playing(api_key, page=1):
+    """Dobija filmove koji se trenutno prikazuju u bioskopima"""
+    try:
+        language = config.plugins.ciefptmdb.language.value
+        url = f"https://api.themoviedb.org/3/movie/now_playing?api_key={api_key}&language={language}&page={page}"
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        return data.get("results", [])[:20]
+    except Exception as e:
+        print(f"[TMDB] Movies Now Playing error: {e}")
+        return []
+
+
+def get_movies_now_playing_40(api_key):
+    """Dobija 40 filmova koji se trenutno prikazuju (2 stranice)"""
+    try:
+        results = []
+
+        # Prva strana
+        movies_page1 = get_movies_now_playing(api_key, page=1)
+        if movies_page1:
+            results.extend(movies_page1)
+
+        # Druga strana
+        if results:
+            movies_page2 = get_movies_now_playing(api_key, page=2)
+            if movies_page2:
+                results.extend(movies_page2)
+
+        # Ukloni duplikate
+        unique_results = []
+        seen_ids = set()
+        for movie in results:
+            movie_id = movie.get("id")
+            if movie_id not in seen_ids:
+                seen_ids.add(movie_id)
+                unique_results.append(movie)
+
+        print(f"[DEBUG] Movies Now Playing 40: vraćeno {len(unique_results)} rezultata")
+        return unique_results[:40]
+    except Exception as e:
+        print(f"[TMDB] Movies Now Playing 40 error: {e}")
         return []
 
 # ---------- NOVO: BACKDROPS & POSTERS GALERIJA ----------
@@ -719,17 +1078,17 @@ class CiefpTMDBMain(Screen):
             <widget name="title" position="50,100" size="900,50" font="Regular;40" foregroundColor="white" backgroundColor="background" transparent="1"/>
 
             <!-- Duration, Rating, Genres, Director -->
-            <widget name="duration" position="50,160" size="1200,40" font="Regular;30" foregroundColor="lightgrey" backgroundColor="background" transparent="1"/>
-            <widget name="rating" position="50,200" size="1200,40" font="Regular;30" foregroundColor="green" backgroundColor="background" transparent="1"/>
+            <widget name="duration" position="50,160" size="1200,40" font="Regular;30" foregroundColor="#D3D3D3" backgroundColor="background" transparent="1"/>
+            <widget name="rating" position="50,200" size="1200,40" font="Regular;30" foregroundColor="#03a81f" backgroundColor="background" transparent="1"/>
             <widget name="imdb_rating" position="50,240" size="1200,40" font="Regular;30" foregroundColor="#F5C518" backgroundColor="background" transparent="1"/>
-            <widget name="genres" position="50,280" size="1200,40" font="Regular;30" foregroundColor="blue" backgroundColor="background" transparent="1"/>
-            <widget name="director" position="50,320" size="1200,40" font="Regular;30" foregroundColor="orange" backgroundColor="background" transparent="1"/>
+            <widget name="genres" position="50,280" size="1200,40" font="Regular;30" foregroundColor="#f702db" backgroundColor="background" transparent="1"/>
+            <widget name="director" position="50,320" size="1200,40" font="Regular;30" foregroundColor="#f79102" backgroundColor="background" transparent="1"/>
 
             <!-- Plot -->
             <widget name="plot" position="50,370" size="1200,300" font="Regular;28" foregroundColor="white" backgroundColor="background" transparent="1" valign="top"/>
 
             <!-- Cast -->
-            <widget name="cast" position="50,650" size="1200,300" font="Regular;26" foregroundColor="cyan" backgroundColor="background" transparent="1" valign="top"/>
+            <widget name="cast" position="50,650" size="1200,300" font="Regular;26" foregroundColor="#00FFFF" backgroundColor="background" transparent="1" valign="top"/>
 
             <!-- Poster -->
             <widget name="poster" position="1300,100" size="500,750" alphatest="blend" zPosition="2"/>
@@ -1395,7 +1754,7 @@ class CiefpTMDBMain(Screen):
         self["plot"].setText("Plot:\n" + overview)
 
         # CAST - ograniči broj glumaca
-        cast_list = credits.get("cast", [])[:4]  # Samo 4 glumca
+        cast_list = credits.get("cast", [])[:6]  # Samo 6 glumca
         cast_text = "Cast:\n" + ("\n".join(
             [f"• {a['name']} as {a.get('character', '')}" for a in cast_list]) if cast_list else "No cast info")
         self["cast"].setText(cast_text)
@@ -1545,7 +1904,10 @@ class CiefpTMDBMain(Screen):
             ("8. Search trending All (Daily)", "trending_all"),
             ("9. Search Top Rated Movies", "top_rated_movies"),
             ("10. Search Top Rated Series", "top_rated_series"),
-            ("11. Search Upcoming Movies", "upcoming_movies")
+            ("11. Search Upcoming Movies", "upcoming_movies"),
+            ("12. Search Now Playing Movies", "now_playing_movies"),  # NOVO
+            ("13. Search TV On The Air", "tv_on_the_air"),  # NOVO
+            ("14. Search TV Airing Today", "tv_airing_today")  # NOVO
         ]
 
         def search_callback(choice):
@@ -1572,6 +1934,12 @@ class CiefpTMDBMain(Screen):
                     self.search_top_rated_series()
                 elif choice[1] == "upcoming_movies":
                     self.search_upcoming_movies()
+                elif choice[1] == "now_playing_movies":  # NOVO
+                    self.search_now_playing_movies()
+                elif choice[1] == "tv_on_the_air":  # NOVO
+                    self.search_tv_on_the_air()
+                elif choice[1] == "tv_airing_today":  # NOVO
+                    self.search_tv_airing_today()
 
         self.session.openWithCallback(search_callback, ChoiceBox,
                                       title="Advanced Search - Select Type",
@@ -1626,15 +1994,17 @@ class CiefpTMDBMain(Screen):
         self.session.openWithCallback(callback, VirtualKeyBoard,
                                       title="Search Directors", text="")
 
+    # U svakoj search funkciji proverite da li pozivate sa page=1
     def search_popular_movies(self):
-        """Prikazuje 20 najpopularnijih filmova u ChoiceBox-u"""
         api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
         if not api_key:
             self["status"].setText("TMDB API key not set!")
             return
 
-        self["status"].setText("Loading popular movies...")
-        movies = get_popular_movies(api_key)
+        self["status"].setText("Loading popular movies (40 results)...")
+
+        # KORISTITE NOVU FUNKCIJU ZA 40 REZULTATA
+        movies = get_popular_movies_40(api_key)  # <-- OVO JE NOVO
 
         if not movies:
             self["status"].setText("No popular movies found")
@@ -1675,18 +2045,20 @@ class CiefpTMDBMain(Screen):
                     self.display_media_info(details, "movie")
 
         self.session.openWithCallback(selected_callback, ChoiceBox,
-                                      title="Popular Movies (TMDB)",
+                                      title=f"Popular Movies - {len(movies)} results",
                                       list=menu_list)
 
     def search_popular_series(self):
-        """Prikazuje 20 najpopularnijih serija u ChoiceBox-u"""
+        """Prikazuje 40 najpopularnijih serija u ChoiceBox-u"""
         api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
         if not api_key:
             self["status"].setText("TMDB API key not set!")
             return
 
-        self["status"].setText("Loading popular series...")
-        series = get_popular_tv(api_key)
+        self["status"].setText("Loading popular series (40 results)...")
+
+        # KORISTITE NOVU FUNKCIJU
+        series = get_popular_tv_40(api_key)  # <-- OVO JE NOVO
 
         if not series:
             self["status"].setText("No popular series found")
@@ -1727,18 +2099,20 @@ class CiefpTMDBMain(Screen):
                     self.display_media_info(details, "tv")
 
         self.session.openWithCallback(selected_callback, ChoiceBox,
-                                      title="Popular Series (TMDB)",
+                                      title=f"Popular Series - {len(series)} results",
                                       list=menu_list)
 
     def search_upcoming_movies(self):
-        """Prikazuje 20 predstojećih filmova"""
+        """Prikazuje 40 predstojećih filmova"""
         api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
         if not api_key:
             self["status"].setText("TMDB API key not set!")
             return
 
-        self["status"].setText("Loading upcoming movies...")
-        movies = get_upcoming_movies(api_key)
+        self["status"].setText("Loading upcoming movies (40 results)...")
+
+        # KORISTITE NOVU FUNKCIJU ZA 40 REZULTATA
+        movies = get_upcoming_movies_40(api_key)  # <-- OVO JE NOVO
 
         if not movies:
             self["status"].setText("No upcoming movies found")
@@ -1789,18 +2163,20 @@ class CiefpTMDBMain(Screen):
                     self.display_media_info(details, "movie")
 
         self.session.openWithCallback(selected_callback, ChoiceBox,
-                                      title="Upcoming Movies (TMDB)",
+                                      title=f"Upcoming Movies - {len(movies)} results",
                                       list=menu_list)
 
     def search_popular_persons(self):
-        """Prikazuje 20 najpopularnijih osoba u ChoiceBox-u"""
+        """Prikazuje 40 najpopularnijih osoba u ChoiceBox-u"""
         api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
         if not api_key:
             self["status"].setText("TMDB API key not set!")
             return
 
-        self["status"].setText("Loading popular persons...")
-        persons = get_popular_persons(api_key)
+        self["status"].setText("Loading popular persons (40 results)...")
+
+        # KORISTITE NOVU FUNKCIJU
+        persons = get_popular_persons_40(api_key)  # <-- OVO JE NOVO
 
         if not persons:
             self["status"].setText("No popular persons found")
@@ -1857,7 +2233,7 @@ class CiefpTMDBMain(Screen):
                     self.display_person_info(details, api_key, person_type)
 
         self.session.openWithCallback(selected_callback, ChoiceBox,
-                                      title="Popular Persons (TMDB)",
+                                      title=f"Popular Persons - {len(persons)} results",
                                       list=menu_list)
 
     def search_trending_all(self):
@@ -1879,11 +2255,11 @@ class CiefpTMDBMain(Screen):
             media_type = item.get("media_type", "")
             if media_type == "movie":
                 title = item.get("title", "N/A")
-                year = item.get("release_date", "")[:4]
+                year = item.get("release_date", "")[:6]
                 prefix = "[Mov]"
             elif media_type == "tv":
                 title = item.get("name", "N/A")
-                year = item.get("first_air_date", "")[:4]
+                year = item.get("first_air_date", "")[:6]
                 prefix = "[Ser]"
             elif media_type == "person":
                 title = item.get("name", "N/A")
@@ -1941,14 +2317,16 @@ class CiefpTMDBMain(Screen):
                                       list=menu_list)
 
     def search_top_rated_movies(self):
-        """Prikazuje 20 najbolje ocenjenih filmova"""
+        """Prikazuje 40 najbolje ocenjenih filmova"""
         api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
         if not api_key:
             self["status"].setText("TMDB API key not set!")
             return
 
-        self["status"].setText("Loading top rated movies...")
-        movies = get_top_rated_movies(api_key)
+        self["status"].setText("Loading top rated movies (40 results)...")
+
+        # KORISTITE NOVU FUNKCIJU
+        movies = get_top_rated_movies_40(api_key)  # <-- OVO JE NOVO
 
         if not movies:
             self["status"].setText("No top rated movies found")
@@ -1985,18 +2363,20 @@ class CiefpTMDBMain(Screen):
                     self.display_media_info(details, "movie")
 
         self.session.openWithCallback(selected_callback, ChoiceBox,
-                                      title="Top Rated Movies (TMDB)",
+                                      title=f"Top Rated Movies - {len(movies)} results",
                                       list=menu_list)
 
     def search_top_rated_series(self):
-        """Prikazuje 20 najbolje ocenjenih serija"""
+        """Prikazuje 40 najbolje ocenjenih serija"""
         api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
         if not api_key:
             self["status"].setText("TMDB API key not set!")
             return
 
-        self["status"].setText("Loading top rated series...")
-        series = get_top_rated_tv(api_key)
+        self["status"].setText("Loading top rated series (40 results)...")
+
+        # KORISTITE NOVU FUNKCIJU
+        series = get_top_rated_tv_40(api_key)  # <-- OVO JE NOVO
 
         if not series:
             self["status"].setText("No top rated series found")
@@ -2033,9 +2413,198 @@ class CiefpTMDBMain(Screen):
                     self.display_media_info(details, "tv")
 
         self.session.openWithCallback(selected_callback, ChoiceBox,
-                                      title="Top Rated Series (TMDB)",
+                                      title=f"Top Rated Series - {len(series)} results",
                                       list=menu_list)
-        
+
+    def search_now_playing_movies(self):
+        """Prikazuje 40 filmova koji se trenutno prikazuju u bioskopima"""
+        api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
+        if not api_key:
+            self["status"].setText("TMDB API key not set!")
+            return
+
+        self["status"].setText("Loading now playing movies (40 results)...")
+
+        movies = get_movies_now_playing_40(api_key)
+
+        if not movies:
+            self["status"].setText("No now playing movies found")
+            return
+
+        menu_list = []
+        for movie in movies:
+            title = movie.get("title", "N/A")
+            release_date = movie.get("release_date", "")
+            rating = movie.get("vote_average", 0)
+
+            if release_date and len(release_date) == 10:
+                try:
+                    y, m, d = release_date.split("-")
+                    pretty_date = f"{int(d):02d}.{int(m):02d}.{y}"
+                except:
+                    pretty_date = release_date
+            else:
+                pretty_date = "N/A"
+
+            if rating >= 8.5:
+                stars = "★★★★★"
+            elif rating >= 7.5:
+                stars = "★★★★☆"
+            elif rating >= 6.5:
+                stars = "★★★☆☆"
+            elif rating >= 5.5:
+                stars = "★★☆☆☆"
+            elif rating > 0:
+                stars = "★☆☆☆☆"
+            else:
+                stars = "☆☆☆☆☆"
+
+            display_text = f"[Now] {title} ({pretty_date}) {stars}"
+            if rating > 0:
+                display_text += f" {rating:.1f}"
+
+            menu_list.append((display_text, movie, "movie"))
+
+        def selected_callback(choice):
+            if choice:
+                selected = choice[1]
+                media_id = selected.get("id")
+                title = selected.get("title", "Unknown")
+                self["status"].setText(f"Loading {title}...")
+                details = _get_media_details(media_id, "movie", api_key)
+                if details:
+                    self.display_media_info(details, "movie")
+
+        self.session.openWithCallback(selected_callback, ChoiceBox,
+                                      title=f"Now Playing Movies - {len(movies)} results",
+                                      list=menu_list)
+
+    def search_tv_on_the_air(self):
+        """Prikazuje 40 serija koje se trenutno emituju"""
+        api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
+        if not api_key:
+            self["status"].setText("TMDB API key not set!")
+            return
+
+        self["status"].setText("Loading TV series on the air (40 results)...")
+
+        series = get_tv_on_the_air_40(api_key)
+
+        if not series:
+            self["status"].setText("No TV series on the air found")
+            return
+
+        menu_list = []
+        for tv in series:
+            name = tv.get("name", "N/A")
+            first_air_date = tv.get("first_air_date", "")
+            rating = tv.get("vote_average", 0)
+
+            if first_air_date and len(first_air_date) == 10:
+                try:
+                    y, m, d = first_air_date.split("-")
+                    pretty_date = f"{int(d):02d}.{int(m):02d}.{y}"
+                except:
+                    pretty_date = first_air_date
+            else:
+                pretty_date = "N/A"
+
+            if rating >= 8:
+                stars = "★★★★★"
+            elif rating >= 7:
+                stars = "★★★★☆"
+            elif rating >= 6:
+                stars = "★★★☆☆"
+            elif rating >= 5:
+                stars = "★★☆☆☆"
+            elif rating > 0:
+                stars = "★☆☆☆☆"
+            else:
+                stars = "☆☆☆☆☆"
+
+            display_text = f"[OnAir] {name} ({pretty_date}) {stars}"
+            if rating > 0:
+                display_text += f" {rating:.1f}"
+
+            menu_list.append((display_text, tv, "tv"))
+
+        def selected_callback(choice):
+            if choice:
+                selected = choice[1]
+                media_id = selected.get("id")
+                title = selected.get("name", "Unknown")
+                self["status"].setText(f"Loading {title}...")
+                details = _get_media_details(media_id, "tv", api_key)
+                if details:
+                    self.display_media_info(details, "tv")
+
+        self.session.openWithCallback(selected_callback, ChoiceBox,
+                                      title=f"TV Series On The Air - {len(series)} results",
+                                      list=menu_list)
+
+    def search_tv_airing_today(self):
+        """Prikazuje 40 serija koje se emituju danas"""
+        api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
+        if not api_key:
+            self["status"].setText("TMDB API key not set!")
+            return
+
+        self["status"].setText("Loading TV series airing today (40 results)...")
+
+        series = get_tv_airing_today_40(api_key)
+
+        if not series:
+            self["status"].setText("No TV series airing today found")
+            return
+
+        menu_list = []
+        for tv in series:
+            name = tv.get("name", "N/A")
+            first_air_date = tv.get("first_air_date", "")
+            rating = tv.get("vote_average", 0)
+
+            if first_air_date and len(first_air_date) == 10:
+                try:
+                    y, m, d = first_air_date.split("-")
+                    pretty_date = f"{int(d):02d}.{int(m):02d}.{y}"
+                except:
+                    pretty_date = first_air_date
+            else:
+                pretty_date = "N/A"
+
+            if rating >= 8:
+                stars = "★★★★★"
+            elif rating >= 7:
+                stars = "★★★★☆"
+            elif rating >= 6:
+                stars = "★★★☆☆"
+            elif rating >= 5:
+                stars = "★★☆☆☆"
+            elif rating > 0:
+                stars = "★☆☆☆☆"
+            else:
+                stars = "☆☆☆☆☆"
+
+            display_text = f"[Today] {name} ({pretty_date}) {stars}"
+            if rating > 0:
+                display_text += f" {rating:.1f}"
+
+            menu_list.append((display_text, tv, "tv"))
+
+        def selected_callback(choice):
+            if choice:
+                selected = choice[1]
+                media_id = selected.get("id")
+                title = selected.get("name", "Unknown")
+                self["status"].setText(f"Loading {title}...")
+                details = _get_media_details(media_id, "tv", api_key)
+                if details:
+                    self.display_media_info(details, "tv")
+
+        self.session.openWithCallback(selected_callback, ChoiceBox,
+                                      title=f"TV Series Airing Today - {len(series)} results",
+                                      list=menu_list)
+
     def tmdb_search_person(self, query, person_type):
         """TMDB pretraga osoba"""
         api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
@@ -2213,7 +2782,7 @@ class CiefpTMDBMain(Screen):
 
         menu_list = []
 
-        for movie in movie_credits[:8]:
+        for movie in movie_credits[:20]:
             title = movie.get('title', 'N/A')
             year = movie.get('release_date', '')[:4]
             rating = movie.get('vote_average', 0)
@@ -2237,7 +2806,7 @@ class CiefpTMDBMain(Screen):
                 else:
                     menu_list.append((f"[Mov] {title} ({year})", movie))
 
-        for tv in tv_credits[:4]:
+        for tv in tv_credits[:10]:
             name = tv.get('name', 'N/A')
             year = tv.get('first_air_date', '')[:4]
             rating = tv.get('vote_average', 0)
@@ -2350,17 +2919,20 @@ class CiefpTMDBMain(Screen):
         menu_list = []
 
         if directors:
-            for director in directors[:2]:
+            for director in directors[:2]:  # Maksimum 2 režisera
                 name = director.get("name", "Unknown")
                 menu_list.append((f"🎬 Director: {name}", director))
 
-        main_cast = cast[:4]
+        # PROMENA OVDE: Povećano sa 4 na 15 glumaca
+        main_cast = cast[:15]  # PROMENJENO SA 4 NA 15
         for i, actor in enumerate(main_cast):
             name = actor.get("name", "Unknown")
             character = actor.get("character", "")
-            if character and len(character) > 20:
-                character = character[:20] + "..."
-            menu_list.append((f"⭐ Star: {name} ({character})", actor))
+            if character and len(character) > 25:  # Povećano sa 20 na 25 karaktera
+                character = character[:25] + "..."
+
+            # Numeracija glumaca
+            menu_list.append((f"{i + 1}. {name} ({character})", actor))
 
         if not menu_list:
             self["status"].setText("No cast/director info available")
@@ -2380,7 +2952,7 @@ class CiefpTMDBMain(Screen):
 
         title = self.current_media_details.get("title") or self.current_media_details.get("name", "Current Media")
         self.session.openWithCallback(person_selected, ChoiceBox,
-                                      title=f"Cast & Crew: {title}",
+                                      title=f"Cast & Crew: {title} ({len(cast)} total)",
                                       list=menu_list)
 
     def show_actor_profiles(self):
