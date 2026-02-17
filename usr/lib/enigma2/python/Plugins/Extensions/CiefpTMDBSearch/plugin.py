@@ -80,7 +80,7 @@ config.plugins.ciefptmdb.show_imdb_rating = ConfigYesNo(default=True)  # DODAJEM
 # plugin dir and files
 PLUGIN_NAME = "CiefpTMDBSearch"
 PLUGIN_DESC = "TMDB search with Popular, Trending and Top Rated sections"
-PLUGIN_VERSION = "2.3"
+PLUGIN_VERSION = "2.4"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else "/usr/lib/enigma2/python/Plugins/Extensions/CiefpTMDBSearch"
 API_KEY_FILE = os.path.join(PLUGIN_DIR, "tmdbapikey.txt")
 OMDB_API_KEY_FILE = os.path.join(PLUGIN_DIR, "omdbapikey.txt")  # DODAJEMO OMDb API fajl
@@ -189,6 +189,98 @@ def get_current_epg_event():
     except Exception as e:
         print(f"[TMDB] EPG lookup error: {e}")
         return None
+        
+def _epg_event_to_dict(event):
+    """
+    Normalizuje event (tuple/dict/objekat) u dict sa:
+    name, short, ext, begin, duration
+    """
+    if not event:
+        return None
+
+    # tuple format je vrlo čest: (begin, duration, title, short, ext, ...)
+    if isinstance(event, tuple):
+        d = {
+            "begin": int(event[0]) if len(event) > 0 and event[0] is not None else None,
+            "duration": int(event[1]) if len(event) > 1 and event[1] is not None else None,
+            "name": str(event[2]) if len(event) > 2 else "",
+            "short": str(event[3]) if len(event) > 3 else "",
+            "ext": str(event[4]) if len(event) > 4 else "",
+        }
+        return d
+
+    # dict format (razne enigma2 varijante)
+    if isinstance(event, dict):
+        begin = event.get("begin") or event.get("begin_time") or event.get("start_time")
+        duration = event.get("duration") or event.get("dur")
+        return {
+            "begin": int(begin) if begin else None,
+            "duration": int(duration) if duration else None,
+            "name": event.get("title") or event.get("name") or "",
+            "short": event.get("short_description") or event.get("short") or "",
+            "ext": event.get("extended_description") or event.get("description") or event.get("ext") or "",
+        }
+
+    # stari event objekat
+    try:
+        return {
+            "begin": int(event.getBeginTime()) if hasattr(event, "getBeginTime") else None,
+            "duration": int(event.getDuration()) if hasattr(event, "getDuration") else None,
+            "name": event.getEventName() or "",
+            "short": event.getShortDescription() or "",
+            "ext": event.getExtendedDescription() or "",
+        }
+    except Exception:
+        return None
+
+
+def get_epg_event_list(max_items=8):
+    """
+    Vraća listu EPG eventova za trenutni kanal:
+    [current, next1, next2, ...] do max_items.
+    """
+    service = get_current_service()
+    if not service:
+        return []
+
+    epg = eEPGCache.getInstance()
+
+    out = []
+    try:
+        # current
+        cur = epg.lookupEventTime(service, -1, 0)
+        cur_d = _epg_event_to_dict(cur)
+        if not cur_d or not cur_d.get("name"):
+            return []
+        out.append(cur_d)
+
+        # next events (iterativno, na osnovu begin+duration)
+        t = cur_d.get("begin")
+        dur = cur_d.get("duration")
+        if not t or not dur:
+            # Ako nemamo vremena, ne možemo pouzdano iterirati
+            return out
+
+        next_time = int(t) + int(dur) + 1
+
+        for _ in range(max_items - 1):
+            ev = epg.lookupEventTime(service, next_time, 0)
+            ev_d = _epg_event_to_dict(ev)
+            if not ev_d or not ev_d.get("name"):
+                break
+            out.append(ev_d)
+
+            b = ev_d.get("begin")
+            d = ev_d.get("duration")
+            if not b or not d:
+                break
+            next_time = int(b) + int(d) + 1
+
+    except Exception as e:
+        print(f"[TMDB] get_epg_event_list error: {e}")
+
+    return out
+
 
 def ensure_cache_folder():
     folder = config.plugins.ciefptmdb.cache_folder.value
@@ -1108,7 +1200,7 @@ class CiefpTMDBMain(Screen):
             <ePixmap pixmap="buttons/yellow.png" position="500,1000" size="35,35" alphatest="blend" />
             <eLabel text="Cast Exp." position="550,990" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#808000" halign="center" valign="center" transparent="0" />
             <ePixmap pixmap="buttons/blue.png" position="750,1000" size="35,35" alphatest="blend" />
-            <eLabel text="Auto EPG" position="800,990" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#000080" halign="center" valign="center" transparent="0" />
+            <eLabel text="EPG" position="800,990" size="200,50" font="Regular;26" foregroundColor="white" backgroundColor="#000080" halign="center" valign="center" transparent="0" />
             <ePixmap pixmap="buttons/red.png" position="1000,1000" size="35,35" alphatest="blend" />
             <eLabel text="OK:Backdrop" position="1050,990" size="200,50" font="Regular;24" foregroundColor="white" backgroundColor="#800080" halign="center" valign="center" transparent="0"/>
             <ePixmap pixmap="buttons/green.png" position="1250,1000" size="35,35" alphatest="blend" />
@@ -1151,7 +1243,7 @@ class CiefpTMDBMain(Screen):
                                         "red": self.close,
                                         "green": self.advanced_search_menu,
                                         "yellow": self.auto_cast_explorer,  # Cast Explorer ostaje na ŽUTOM
-                                        "blue": self.auto_epg_search,
+                                        "blue": self.open_epg_choicebox,
                                         "menu": self.show_more_options,  # MENU sada otvara dodatne opcije
                                         "up": self.keyUp,
                                         "down": self.keyDown,
@@ -1821,6 +1913,88 @@ class CiefpTMDBMain(Screen):
             return
 
         self.display_media_info(details, media_type, raw_title)
+        
+    def _search_tmdb_from_epg_dict(self, event_dict):
+        """
+        Radi isto što i auto_epg_search, ali prima event_dict iz liste
+        (name/short/ext/begin/duration).
+        TMDB se poziva tek kad korisnik izabere event.
+        """
+        if not event_dict or not event_dict.get("name"):
+            self["status"].setText("No EPG title!")
+            return
+
+        raw_title = event_dict.get("name", "")
+        description = (event_dict.get("short", "") + " " + event_dict.get("ext", "")).strip()
+
+        title = re.sub(r"\s*\[.*?\]|\s*\(.*?\)|\s*-\s*.+$", "", raw_title).strip()
+        title = re.sub(r"^Film[:\-]?\s*|^Movie[:\-]?\s*", "", title, flags=re.I).strip()
+
+        year = None
+        year_match = re.search(r"\b(19|20)\d{2}\b", raw_title + " " + description)
+        if year_match:
+            year = int(year_match.group(0))
+
+        if not title:
+            self["status"].setText("No title found in EPG!")
+            return
+
+        self["status"].setText(f"Searching: {title}" + (f" ({year})" if year else ""))
+
+        api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
+        if not api_key:
+            self["status"].setText("TMDB API Key not set!")
+            return
+
+        result, media_type = self.multi_search_with_fallback(title, year, api_key)
+        if not result:
+            self["status"].setText("Nothing found on TMDB")
+            return
+
+        media_id = result["id"]
+        details = _get_media_details(media_id, media_type, api_key)
+        if not details:
+            self["status"].setText("Error loading details")
+            return
+
+        self.display_media_info(details, media_type, raw_title)
+
+
+    def open_epg_choicebox(self):
+        """
+        Plavo dugme (EPG): prikazuje ChoiceBox sa trenutnim i sledećim EPG eventovima.
+        TMDB se poziva tek kad korisnik izabere stavku.
+        """
+        events = get_epg_event_list(max_items=10)
+        if not events:
+            self["status"].setText("No EPG list available!")
+            return
+
+        menu_list = []
+        for idx, ev in enumerate(events):
+            begin = ev.get("begin")
+            hhmm = ""
+            if begin:
+                try:
+                    hhmm = time.strftime("%H:%M", time.localtime(int(begin)))
+                except Exception:
+                    hhmm = ""
+
+            name = ev.get("name", "")
+            if idx == 0:
+                display = f"▶ {hhmm}  {name}" if hhmm else f"▶ {name}"
+            else:
+                display = f"{hhmm}  {name}" if hhmm else name
+
+            menu_list.append((display, ev))
+
+        def _cb(choice):
+            if choice:
+                self._search_tmdb_from_epg_dict(choice[1])
+
+        self.session.openWithCallback(_cb, ChoiceBox,
+                                      title="EPG (current + next)",
+                                      list=menu_list)
 
     def poster_downloaded(self, path):
         if path and os.path.exists(path):
