@@ -6,6 +6,9 @@ version='1.1'
 changelog='\nFix little bugs\nUpdated Picons List'
 ##############################################################
 
+# Check if we should skip restart (for batch installations)
+SKIP_REBOOT="${SKIP_REBOOT:-0}"
+
 TMPPATH=/tmp/CiefpTMDBSearch
 
 if [ ! -d /usr/lib64 ]; then
@@ -97,12 +100,19 @@ echo ""
 echo "#########################################################"
 echo "#         CiefpTMDBSearch INSTALLED SUCCESSFULLY        #"
 echo "#                  developed by ciefp                   #"
-echo "#                   Big thanks Qu4k3                    #"
-echo "#                  .::ciefpsettings::.                  #"
-echo "#                  https://Sat-Club.EU                  #"
+echo "#                  .::CiefpSettings::.                  #"
+echo "#               https://github.com/ciefp                #"
 echo "#########################################################"
-echo "#           your Device will RESTART Now                #"
-echo "#########################################################"
-sleep 5
-killall -9 enigma2
+
+# Only restart if SKIP_REBOOT is not set to 1
+if [ "$SKIP_REBOOT" = "0" ]; then
+    echo "#           your Device will RESTART Now                #"
+    echo "#########################################################"
+    sleep 5
+    killall -9 enigma2
+else
+    echo "#        Restart skipped (batch installation)           #"
+    echo "#########################################################"
+fi
+
 exit 0
