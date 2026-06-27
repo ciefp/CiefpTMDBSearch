@@ -9,6 +9,7 @@ import urllib.request
 import urllib.parse
 import threading
 import time
+import subprocess
 from io import BytesIO
 
 # Enigma2 imports
@@ -80,7 +81,7 @@ config.plugins.ciefptmdb.show_imdb_rating = ConfigYesNo(default=True)  # DODAJEM
 # plugin dir and files
 PLUGIN_NAME = "CiefpTMDBSearch"
 PLUGIN_DESC = "TMDB search with Popular, Trending and Top Rated sections"
-PLUGIN_VERSION = "2.4"
+PLUGIN_VERSION = "2.5"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else "/usr/lib/enigma2/python/Plugins/Extensions/CiefpTMDBSearch"
 API_KEY_FILE = os.path.join(PLUGIN_DIR, "tmdbapikey.txt")
 OMDB_API_KEY_FILE = os.path.join(PLUGIN_DIR, "omdbapikey.txt")  # DODAJEMO OMDb API fajl
@@ -1066,6 +1067,110 @@ def get_imdb_rating(media_info, media_type, api_key):
     
     return None
 
+
+# ---------- TRAILER FUNKCIJE ----------
+def get_movie_trailer(media_id, media_type, api_key):
+    """Dobija YouTube trailer ID za film/seriju"""
+    if not api_key:
+        return None
+
+    try:
+        language = config.plugins.ciefptmdb.language.value
+        url = f"https://api.themoviedb.org/3/{media_type}/{media_id}/videos?api_key={api_key}&language={language}"
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        with urllib.request.urlopen(url, context=ctx, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+
+        videos = data.get("results", [])
+
+        # Prvo traži YouTube video
+        for video in videos:
+            if video.get("site") == "YouTube" and video.get("type") in ["Trailer", "Teaser"]:
+                return video.get("key")
+
+        # Ako nema na traženom jeziku, probaj bez jezika
+        if language != "en-US":
+            url2 = f"https://api.themoviedb.org/3/{media_type}/{media_id}/videos?api_key={api_key}"
+            with urllib.request.urlopen(url2, context=ctx, timeout=10) as resp:
+                data2 = json.loads(resp.read().decode("utf-8", errors="ignore"))
+
+            videos2 = data2.get("results", [])
+            for video in videos2:
+                if video.get("site") == "YouTube" and video.get("type") in ["Trailer", "Teaser"]:
+                    return video.get("key")
+
+        return None
+    except Exception as e:
+        print(f"[TMDB] Trailer error: {e}")
+        return None
+
+
+def play_youtube_trailer(youtube_id, media_title=""):
+    """Pokreće YouTube trailer sa prikazom naziva"""
+    if not youtube_id:
+        return
+
+    import subprocess
+    from Screens.InfoBar import InfoBar
+    from enigma import eServiceReference, eServiceCenter
+
+    try:
+        youtube_url = f"https://www.youtube.com/watch?v={youtube_id}"
+
+        # Dobij direktan URL
+        cmd = ['yt-dlp', '-g', '-f', 'best', youtube_url]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+
+        if result.returncode != 0:
+            # Probaj bez -f opcije
+            cmd = ['yt-dlp', '-g', youtube_url]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+
+            if result.returncode != 0:
+                print(f"[TMDB] yt-dlp error: {result.stderr}")
+                return
+
+        video_url = result.stdout.strip().split('\n')[0]
+
+        if not video_url:
+            return
+
+        # Kreiraj servis referencu
+        service_ref = eServiceReference(4097, 0, video_url)
+
+        # POSTAVI NAZIV ZA PRIKAZ
+        if media_title:
+            # Dodaj info o trejleru u naziv
+            display_title = f"{media_title} - Trailer"
+
+            # Postavi naziv preko service reference
+            try:
+                # Metoda 1: Preko setName (ako postoji)
+                if hasattr(service_ref, 'setName'):
+                    service_ref.setName(display_title)
+            except:
+                pass
+
+            # Metoda 2: Preko service handler-a
+            try:
+                service_handler = eServiceCenter.getInstance()
+                if service_handler:
+                    info = service_handler.info(service_ref)
+                    if info and hasattr(info, 'setString'):
+                        info.setString(service_ref, iServiceInformation.sServiceName, display_title)
+            except:
+                pass
+
+        # Reprodukuj
+        if InfoBar.instance:
+            InfoBar.instance.session.nav.playService(service_ref)
+
+    except Exception as e:
+        print(f"[TMDB] Trailer error: {e}")
+
 def download_poster_async(poster_path, media_id, media_type, callback):
     if not poster_path or not media_id:
         callback(None)
@@ -1162,9 +1267,9 @@ def get_cache_info():
 # ---------- MAIN SEARCH SCREEN ----------
 class CiefpTMDBMain(Screen):
     skin = """
-        <screen position="center,center" size="1920,1080" title="..:: CiefpTMDBSearch (v{version}) ::..">
+        <screen position="center,center" size="1920,1080" title="..:: CiefpTMDBSearch (v{version}) ::.." backgroundColor="#011a2e">
             <!-- EPG Title -->
-            <widget name="epg_title" position="50,50" size="900,40" font="Regular;30" foregroundColor="yellow" backgroundColor="background" transparent="1"/>
+            <widget name="epg_title" position="50,50" size="900,40" font="Regular;30" foregroundColor="yellow" backgroundColor="#011a2e" transparent="1"/>
 
             <!-- Title -->
             <widget name="title" position="50,100" size="900,50" font="Regular;40" foregroundColor="white" backgroundColor="background" transparent="1"/>
@@ -1189,8 +1294,9 @@ class CiefpTMDBMain(Screen):
             <widget name="backdrop" position="50,100" size="1200,720" zPosition="1" alphatest="blend" />
     
             <!-- Status -->
-            <widget name="status" position="1530,990" size="270,60" font="Regular;26" foregroundColor="#00FF00" halign="left" />
-            <widget name="status2" position="50,12" size="270,30" font="Regular;26" foregroundColor="#00FF00" halign="left" />
+            <widget name="status" position="1530,990" size="270,60" font="Regular;26" foregroundColor="#00FF00" backgroundColor="#011a2e" halign="left" />
+            <widget name="status2" position="50,12" size="270,30" font="Regular;26" foregroundColor="#00FF00" backgroundColor="#011a2e" halign="left" />
+            <widget name="status3" position="1200,12" size="700,30" font="Regular;26" foregroundColor="#00FF00" backgroundColor="#011a2e" halign="left" />
             
             <!-- Ažurirane oznake za dugmad -->
             <ePixmap pixmap="buttons/red.png" position="0,1000" size="35,35" alphatest="blend" />
@@ -1220,9 +1326,11 @@ class CiefpTMDBMain(Screen):
         self.current_person_name = None
         self.previous_person_details = None
         self.previous_person_name = None
+        self.current_trailer_id = None
         self["left_text"] = Label("")
         self["status"] = Label("Ready")
         self["status2"] = Label("")
+        self["status3"] = Label("")
         self["epg_title"] = Label("")
         self["title"] = Label("")
         self["duration"] = Label("")
@@ -1236,15 +1344,17 @@ class CiefpTMDBMain(Screen):
         self["backdrop"] = Pixmap()
 
         # Extended action map - IZBRISALI SMO "info" AKCIJU
-        self["actions"] = ActionMap(["OkCancelActions", "ColorActions", "MenuActions", "DirectionActions", "ChannelSelectBaseActions"],
+        self["actions"] = ActionMap(["OkCancelActions", "ColorActions", "MenuActions", "DirectionActions", "ChannelSelectBaseActions", "InfoActions"],
                                     {
                                         "cancel": self.keyBack,
                                         "ok": self.toggle_backdrop_view,
                                         "red": self.close,
                                         "green": self.advanced_search_menu,
-                                        "yellow": self.auto_cast_explorer,  # Cast Explorer ostaje na ŽUTOM
+                                        "yellow": self.auto_cast_explorer,
                                         "blue": self.open_epg_choicebox,
-                                        "menu": self.show_more_options,  # MENU sada otvara dodatne opcije
+                                        "menu": self.show_more_options,
+                                        "info": self.play_trailer,      # DODAJ OVO - INFO dugme
+                                        "help": self.play_trailer,      # DODAJ OVO - HELP dugme (ako postoj
                                         "up": self.keyUp,
                                         "down": self.keyDown,
                                         "nextBouquet": self.zapDown,
@@ -1301,39 +1411,45 @@ class CiefpTMDBMain(Screen):
             return None
         print ("%s" % service_name)
         self["status2"].setText(str(service_name))
-    
+
     def show_more_options(self):
-        """Prikazuje dodatne opcije preko MENU dugmeta - zamenio Settings"""
+        """Prikazuje dodatne opcije preko MENU dugmeta"""
         from Screens.ChoiceBox import ChoiceBox
-        
+
         menu_list = []
-        
+
+        # ---------- DODAJ TREJLER OPCIJU ----------
+        if self.current_trailer_id:
+            menu_list.append(("▶ Watch Trailer", "trailer"))
+
         # Uvek dodaj Settings opciju
         menu_list.append(("⚙️ Settings", "settings"))
-        
+
         # Ako ima media detalja, dodaj opcije za galerije
         if self.current_media_details:
             menu_list.append(("🖼️ Backdrop Gallery", "backdrop_gallery"))
             menu_list.append(("🎬 Poster Gallery", "poster_gallery"))
-            
+
             # Ako je u pitanju TV serija, dodaj opciju za sezone i epizode
             if self.current_media_type == "tv":
                 menu_list.append(("📺 Season & Episodes", "seasons"))
-        
+
         # Ako je profil osobe, dodaj opciju za filmografiju
         if self.current_person_details:
             menu_list.append(("🎞️ Filmography", "filmography"))
-        
+
         # Ako je film ili serija, dodaj opciju za glumce
         if self.current_media_details:
             menu_list.append(("👥 Cast Explorer", "cast_explorer"))
-        
+
         # Dodaj opciju za brisanje keša
         menu_list.append(("🗑️ Clear Cache", "clear_cache"))
-        
+
         def option_callback(choice):
             if choice:
-                if choice[1] == "settings":
+                if choice[1] == "trailer":
+                    self.play_trailer()
+                elif choice[1] == "settings":
                     self.open_settings()
                 elif choice[1] == "backdrop_gallery":
                     self.open_backdrop_gallery()
@@ -1866,6 +1982,47 @@ class CiefpTMDBMain(Screen):
         else:
             self.current_backdrop_path = None
             self["backdrop"].hide()
+
+        # ---------- TRAILER (ISPRAVAN REDOSLED) ----------
+        # 1. Prvo resetuj trailer ID
+        self.current_trailer_id = None
+
+        # 2. Zatim pokreni dohvatanje trejlera (asinhrono)
+        api_key = config.plugins.ciefptmdb.tmdb_api_key.value.strip()
+        if api_key and media_id:
+            threading.Thread(target=self._fetch_trailer, args=(media_id, media_type, api_key), daemon=True).start()
+
+        # 3. Status poruka - za sada samo "Info loaded"
+        #    Kada _fetch_trailer završi, on će sam ažurirati status sa "▶ Trailer available..."
+
+    def _fetch_trailer(self, media_id, media_type, api_key):
+        """Dohvata trejler u pozadini"""
+        try:
+            trailer_id = get_movie_trailer(media_id, media_type, api_key)
+            if trailer_id:
+                self.current_trailer_id = trailer_id
+                # Ažuriraj status sa obaveštenjem o trejleru
+                self["status3"].setText(f"▶ Trailer available - Press MENU, INFO or HELP to watch")
+            else:
+                # Ako nema trejlera, vrati na "Info loaded"
+                self["status"].setText("Info loaded")
+        except Exception as e:
+            print(f"[TMDB] Fetch trailer error: {e}")
+            self["status"].setText("Info loaded")
+
+    def play_trailer(self):
+        """Pokreće trejler"""
+        if not self.current_trailer_id:
+            self["status3"].setText("No trailer available!")
+            return
+
+        # Dobij naziv filma/serije za prikaz
+        media_title = ""
+        if self.current_media_details:
+            media_title = self.current_media_details.get("title") or self.current_media_details.get("name", "")
+
+        self["status3"].setText("Playing trailer...")
+        play_youtube_trailer(self.current_trailer_id, media_title)
 
     def auto_epg_search(self):
         self["status"].setText("Auto EPG Search in progress...")
@@ -3695,9 +3852,9 @@ class BackdropGalleryScreen(Screen):
 # ---------- SETTINGS SCREEN ----------
 class SettingsScreen(Screen):
     skin = """
-        <screen name="SettingsScreen" position="center,center" size="1600,800" title="..:: CiefpTMDBSearch Settings ::..">
-            <widget name="status" position="20,650" size="1000,40" font="Regular;26" foregroundColor="#00FF00" />
-            <widget name="background" position="1000,0" size="600,800" pixmap="%s" alphatest="on" />
+        <screen name="SettingsScreen" position="center,center" size="1700,800" title="..:: CiefpTMDBSearch Settings ::.." backgroundColor="#011a2e">
+            <widget name="status" position="20,650" size="1000,40" font="Regular;26" foregroundColor="#00FF00" backgroundColor="#011a2e"/>
+            <widget name="background" position="1100,0" size="600,800" pixmap="%s" alphatest="on" />
             <ePixmap pixmap="buttons/red.png" position="0,720" size="35,35" alphatest="blend" />
             <eLabel text="Cancel" position="50,710" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#800000" halign="center" valign="center" transparent="0" />
             <ePixmap pixmap="buttons/green.png" position="250,720" size="35,35" alphatest="blend" />
