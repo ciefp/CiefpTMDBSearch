@@ -1267,7 +1267,7 @@ def get_cache_info():
 # ---------- MAIN SEARCH SCREEN ----------
 class CiefpTMDBMain(Screen):
     skin = """
-        <screen position="center,center" size="1920,1080" title="..:: CiefpTMDBSearch (v{version}) ::.." backgroundColor="#011a2e">
+        <screen position="center,center" size="1920,1080"  backgroundColor="#011a2e">
             <!-- EPG Title -->
             <widget name="epg_title" position="50,50" size="900,40" font="Regular;30" foregroundColor="yellow" backgroundColor="#011a2e" transparent="1"/>
 
