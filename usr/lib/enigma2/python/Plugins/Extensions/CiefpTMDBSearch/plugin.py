@@ -81,7 +81,7 @@ config.plugins.ciefptmdb.show_imdb_rating = ConfigYesNo(default=True)  # DODAJEM
 # plugin dir and files
 PLUGIN_NAME = "CiefpTMDBSearch"
 PLUGIN_DESC = "TMDB search with Popular, Trending and Top Rated sections"
-PLUGIN_VERSION = "2.5"
+PLUGIN_VERSION = "2.6"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else "/usr/lib/enigma2/python/Plugins/Extensions/CiefpTMDBSearch"
 API_KEY_FILE = os.path.join(PLUGIN_DIR, "tmdbapikey.txt")
 OMDB_API_KEY_FILE = os.path.join(PLUGIN_DIR, "omdbapikey.txt")  # DODAJEMO OMDb API fajl
@@ -1267,7 +1267,7 @@ def get_cache_info():
 # ---------- MAIN SEARCH SCREEN ----------
 class CiefpTMDBMain(Screen):
     skin = """
-        <screen position="center,center" size="1920,1080"  backgroundColor="#011a2e">
+        <screen position="center,center" size="1920,1080" backgroundColor="#011a2e">
             <!-- EPG Title -->
             <widget name="epg_title" position="50,50" size="900,40" font="Regular;30" foregroundColor="yellow" backgroundColor="#011a2e" transparent="1"/>
 
@@ -3854,16 +3854,16 @@ class SettingsScreen(Screen):
     skin = """
         <screen name="SettingsScreen" position="center,center" size="1700,800" title="..:: CiefpTMDBSearch Settings ::.." backgroundColor="#011a2e">
             <widget name="status" position="20,650" size="1000,40" font="Regular;26" foregroundColor="#00FF00" backgroundColor="#011a2e"/>
-            <widget name="background" position="1100,0" size="600,800" pixmap="%s" alphatest="on" />
-            <ePixmap pixmap="buttons/red.png" position="0,720" size="35,35" alphatest="blend" />
-            <eLabel text="Cancel" position="50,710" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#800000" halign="center" valign="center" transparent="0" />
-            <ePixmap pixmap="buttons/green.png" position="250,720" size="35,35" alphatest="blend" />
-            <eLabel text="Save" position="300,710" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#008000" halign="center" valign="center" transparent="0" />
-            <ePixmap pixmap="buttons/yellow.png" position="500,720" size="35,35" alphatest="blend" />
-            <eLabel text="TMDB API Key" position="550,710" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#808000" halign="center" valign="center" transparent="0" />
-            <ePixmap pixmap="buttons/blue.png" position="750,720" size="35,35" alphatest="blend" />
-            <eLabel text="OMDb API Key" position="800,710" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#000080" halign="center" valign="center" transparent="0" />
-            <widget name="menu" position="50,50" size="900,550" scrollbarMode="showOnDemand" itemHeight="50" font="Regular;28" />
+            <widget name="menu" position="50,50" size="1000,600" scrollbarMode="showOnDemand" itemHeight="50" font="Regular;28" backgroundColor="#011a2e"/>
+            <widget name="background" position="1100,0" size="500,750" pixmap="%s" alphatest="on" />
+            <ePixmap pixmap="buttons/red.png" position="0,740" size="35,35" alphatest="blend" />
+            <eLabel text="Cancel" position="50,730" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#800000" halign="center" valign="center" transparent="0" />
+            <ePixmap pixmap="buttons/green.png" position="250,740" size="35,35" alphatest="blend" />
+            <eLabel text="Save" position="300,730" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#008000" halign="center" valign="center" transparent="0" />
+            <ePixmap pixmap="buttons/yellow.png" position="500,740" size="35,35" alphatest="blend" />
+            <eLabel text="TMDB API Key" position="550,730" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#808000" halign="center" valign="center" transparent="0" />
+            <ePixmap pixmap="buttons/blue.png" position="750,740" size="35,35" alphatest="blend" />
+            <eLabel text="OMDb API Key" position="800,730" size="200,50" font="Regular;28" foregroundColor="white" backgroundColor="#000080" halign="center" valign="center" transparent="0" />
         </screen>
     """ % BACKGROUND_SETTINGS
 
