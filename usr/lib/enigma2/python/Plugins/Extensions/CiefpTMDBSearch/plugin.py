@@ -81,7 +81,7 @@ config.plugins.ciefptmdb.show_imdb_rating = ConfigYesNo(default=True)  # DODAJEM
 # plugin dir and files
 PLUGIN_NAME = "CiefpTMDBSearch"
 PLUGIN_DESC = "TMDB search with Popular, Trending and Top Rated sections"
-PLUGIN_VERSION = "2.6"
+PLUGIN_VERSION = "2.7"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else "/usr/lib/enigma2/python/Plugins/Extensions/CiefpTMDBSearch"
 API_KEY_FILE = os.path.join(PLUGIN_DIR, "tmdbapikey.txt")
 OMDB_API_KEY_FILE = os.path.join(PLUGIN_DIR, "omdbapikey.txt")  # DODAJEMO OMDb API fajl
@@ -1119,15 +1119,15 @@ def play_youtube_trailer(youtube_id, media_title=""):
 
     try:
         youtube_url = f"https://www.youtube.com/watch?v={youtube_id}"
-
-        # Dobij direktan URL
-        cmd = ['yt-dlp', '-g', '-f', 'best', youtube_url]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        # Dobij direktan URL (eksplicitno tražimo format 18 - 360p MP4 sa audiom)
+        # Format 18 je standardni 360p (MP4, video + audio u jednom fajlu)
+        cmd = ['yt-dlp', '-g', '-f', '18/best[height<=360]/best', youtube_url]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
         if result.returncode != 0:
             # Probaj bez -f opcije
             cmd = ['yt-dlp', '-g', youtube_url]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
             if result.returncode != 0:
                 print(f"[TMDB] yt-dlp error: {result.stderr}")
@@ -2167,7 +2167,7 @@ class CiefpTMDBMain(Screen):
         self["poster"].show()
 
     def multi_search_with_fallback(self, title, year, api_key):
-        """Najbolji mogući search – koristi /search/multi + pametan fallback"""
+        """Najbolji mogući search – IDENTIČNO kao CiefpEPGinfo (uzima PRVI rezultat)"""
         try:
             language = config.plugins.ciefptmdb.language.value
             params = {
@@ -2186,39 +2186,24 @@ class CiefpTMDBMain(Screen):
             with urllib.request.urlopen(url, context=ctx, timeout=12) as resp:
                 data = json.loads(resp.read().decode("utf-8", errors="ignore"))
 
-            results = data.get("results", [])
+            results = [r for r in data.get("results", []) if r.get("media_type") in ("movie", "tv")]
             if not results:
                 return None, None
 
-            candidates = [r for r in results if r.get("media_type") in ("movie", "tv")]
-            if not candidates:
-                return None, None
-
+            # Ako ima godina, probaj da nađeš tačan match
             if year:
-                for c in candidates:
+                for c in results:
                     c_year = (c.get("release_date") or c.get("first_air_date") or "")[:4]
                     if c_year == str(year):
                         return c, c["media_type"]
 
-            candidates.sort(key=lambda x: x.get("popularity", 0), reverse=True)
-            best = candidates[0]
-
-            if best["media_type"] == "movie":
-                temp_details = _get_media_details(best["id"], "movie", api_key)
-                runtime = temp_details.get("runtime") if temp_details else 0
-                if runtime and runtime < 35:
-                    tv_result = _search_tmdb_tv(title, year, api_key)
-                    if tv_result[0]:
-                        return tv_result
-
+            # Ako nema tačnog match-a, uzmi PRVI rezultat (kao EPGinfo)
+            best = results[0]
             return best, best["media_type"]
 
         except Exception as e:
             print(f"[TMDB] Multi search error: {e}")
-            result, mtype = _search_tmdb_movie(title, year, api_key)
-            if result:
-                return result, mtype
-            return _search_tmdb_tv(title, year, api_key)
+            return None, None
 
     def advanced_search_menu(self):
         """Prikazuje meni za naprednu pretragu"""
