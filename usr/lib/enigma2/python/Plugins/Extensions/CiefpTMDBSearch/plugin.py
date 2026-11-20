@@ -81,7 +81,7 @@ config.plugins.ciefptmdb.show_imdb_rating = ConfigYesNo(default=True)  # DODAJEM
 # plugin dir and files
 PLUGIN_NAME = "CiefpTMDBSearch"
 PLUGIN_DESC = "TMDB search with Popular, Trending and Top Rated sections"
-PLUGIN_VERSION = "2.7"
+PLUGIN_VERSION = "2.8"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else "/usr/lib/enigma2/python/Plugins/Extensions/CiefpTMDBSearch"
 API_KEY_FILE = os.path.join(PLUGIN_DIR, "tmdbapikey.txt")
 OMDB_API_KEY_FILE = os.path.join(PLUGIN_DIR, "omdbapikey.txt")  # DODAJEMO OMDb API fajl
@@ -1280,18 +1280,45 @@ class CiefpTMDBMain(Screen):
             <widget name="imdb_rating" position="50,240" size="1200,40" font="Regular;30" foregroundColor="#F5C518" backgroundColor="background" transparent="1"/>
             <widget name="genres" position="50,280" size="1200,40" font="Regular;30" foregroundColor="#f702db" backgroundColor="background" transparent="1"/>
             <widget name="director" position="50,320" size="1200,40" font="Regular;30" foregroundColor="#f79102" backgroundColor="background" transparent="1"/>
-
             <!-- Plot -->
-            <widget name="plot" position="50,370" size="1200,300" font="Regular;28" foregroundColor="white" backgroundColor="background" transparent="1" valign="top"/>
+            <widget name="plot" position="50,370" size="1200,260" font="Regular;26" foregroundColor="white" backgroundColor="background" transparent="1" valign="top"/>
 
-            <!-- Cast -->
-            <widget name="cast" position="50,650" size="1200,300" font="Regular;26" foregroundColor="#00FFFF" backgroundColor="background" transparent="1" valign="top"/>
+            <!-- Cast (5 posters + names) -->
+            <widget name="cast_img_0" position="40,632" size="185,278" scale="1" alphatest="blend" zPosition="3"/>
+            <widget name="cast_img_1" position="235,632" size="185,278" scale="1" alphatest="blend" zPosition="3"/>
+            <widget name="cast_img_2" position="430,632" size="185,278" scale="1" alphatest="blend" zPosition="3"/>
+            <widget name="cast_img_3" position="625,632" size="185,278" scale="1" alphatest="blend" zPosition="3"/>
+            <widget name="cast_img_4" position="820,632" size="185,278" scale="1" alphatest="blend" zPosition="3"/>
+
+            <widget name="cast_name_0" position="40,920" size="180,30" font="Regular;18" halign="left" foregroundColor="#FFFFFF" backgroundColor="#011a2e" transparent="1"/>
+            <widget name="cast_name_1" position="235,920" size="180,30" font="Regular;18" halign="left" foregroundColor="#FFFFFF" backgroundColor="#011a2e" transparent="1"/>
+            <widget name="cast_name_2" position="430,920" size="180,30" font="Regular;18" halign="left" foregroundColor="#FFFFFF" backgroundColor="#011a2e" transparent="1"/>
+            <widget name="cast_name_3" position="625,920" size="180,30" font="Regular;18" halign="left" foregroundColor="#FFFFFF" backgroundColor="#011a2e" transparent="1"/>
+            <widget name="cast_name_4" position="820,920" size="180,30" font="Regular;18" halign="left" foregroundColor="#FFFFFF" backgroundColor="#011a2e" transparent="1"/>
+
+            <!-- Director (poster + label + name) -->
+            <widget name="director_label" position="1020,920" size="120,30" font="Regular;18" halign="right" foregroundColor="#f79102" backgroundColor="#011a2e" transparent="1"/>
+            <widget name="director_img" position="1100,632" size="185,278" scale="1" alphatest="blend" zPosition="3"/>
+            <widget name="director_name" position="1160,920" size="220,30" font="Regular;18" halign="left" foregroundColor="#f79102" backgroundColor="#011a2e" transparent="1"/>
 
             <!-- Poster -->
             <widget name="poster" position="1300,100" size="500,750" alphatest="blend" zPosition="2"/>
             
+            <!-- Actor related media posters (10 items + movable frame) -->
+            <widget name="person_rel_img_0" position="50,740" size="150,215" scale="1" alphatest="blend" zPosition="3"/>
+            <widget name="person_rel_img_1" position="230,740" size="150,215" scale="1" alphatest="blend" zPosition="3"/>
+            <widget name="person_rel_img_2" position="410,740" size="150,215" scale="1" alphatest="blend" zPosition="3"/>
+            <widget name="person_rel_img_3" position="590,740" size="150,215" scale="1" alphatest="blend" zPosition="3"/>
+            <widget name="person_rel_img_4" position="770,740" size="150,215" scale="1" alphatest="blend" zPosition="3"/>
+            <widget name="person_rel_img_5" position="950,740" size="150,215" scale="1" alphatest="blend" zPosition="3"/>
+            <widget name="person_rel_img_6" position="1130,740" size="150,215" scale="1" alphatest="blend" zPosition="3"/>
+            <widget name="person_rel_img_7" position="1310,740" size="150,215" scale="1" alphatest="blend" zPosition="3"/>
+            <widget name="person_rel_img_8" position="1490,740" size="150,215" scale="1" alphatest="blend" zPosition="3"/>
+            <widget name="person_rel_img_9" position="1670,740" size="150,215" scale="1" alphatest="blend" zPosition="3"/>
+            <widget name="person_rel_frame" position="42,732" size="166,231" scale="1" alphatest="blend" zPosition="10"/>
+            
             <!-- Backdrop -->
-            <widget name="backdrop" position="50,100" size="1200,720" zPosition="1" alphatest="blend" />
+            <widget name="backdrop" position="50,80" size="1200,720" zPosition="1" alphatest="blend" />
     
             <!-- Status -->
             <widget name="status" position="1530,990" size="270,60" font="Regular;26" foregroundColor="#00FF00" backgroundColor="#011a2e" halign="left" />
@@ -1323,6 +1350,9 @@ class CiefpTMDBMain(Screen):
         self.current_media_details = None
         self.current_media_type = None
         self.current_person_details = None
+        self.person_related_items = []
+        self.person_rel_index = 0
+        self._person_rel_x_positions = [50 + i * 180 for i in range(10)]
         self.current_person_name = None
         self.previous_person_details = None
         self.previous_person_name = None
@@ -1339,7 +1369,27 @@ class CiefpTMDBMain(Screen):
         self["genres"] = Label("")
         self["director"] = Label("")
         self["plot"] = Label("")
-        self["cast"] = Label("")
+        for i in range(5):
+            self[f"cast_img_{i}"] = Pixmap()
+            self[f"cast_name_{i}"] = Label("")
+
+        self["director_label"] = Label("")
+        self["director_img"] = Pixmap()
+        for i in range(10):
+            self[f"person_rel_img_{i}"] = Pixmap()
+            self[f"person_rel_img_{i}"].hide()
+
+        self["person_rel_frame"] = Pixmap()
+        self["person_rel_frame"].hide()
+        self.frame_pixmap = None
+        frame_path = os.path.join(PLUGIN_DIR, "frame.png")
+        frame_px = load_pixmap_safe(frame_path)
+        if frame_px and self["person_rel_frame"].instance:
+            try:
+                self["person_rel_frame"].instance.setPixmap(frame_px)
+            except Exception:
+                pass
+        self["director_name"] = Label("")
         self["poster"] = Pixmap()
         self["backdrop"] = Pixmap()
 
@@ -1357,6 +1407,8 @@ class CiefpTMDBMain(Screen):
                                         "help": self.play_trailer,      # DODAJ OVO - HELP dugme (ako postoj
                                         "up": self.keyUp,
                                         "down": self.keyDown,
+                                        "left": self.keyLeft,
+                                        "right": self.keyRight,
                                         "nextBouquet": self.zapDown,
                                         "prevBouquet": self.zapUp
                                     }, -1)
@@ -1693,82 +1745,74 @@ class CiefpTMDBMain(Screen):
         if not api_key:
             self["status"].setText("TMDB API key not set!")
             return
-            
+
         self["status"].setText("Loading episode details...")
-        
+
         # Koristimo podatke koje već imamo ili dobijamo dodatne detalje
         episode_name = episode_data.get("name", f"Episode {episode_num}")
         overview = episode_data.get("overview", "No description available.")
         air_date = episode_data.get("air_date", "")
         runtime = episode_data.get("runtime", 0)
         rating = episode_data.get("vote_average", 0)
-        
-        # Ažuriraj prikaz
+
+        # Ažuriraj prikaz (ovo ujedno zove _clear_cast_and_director_widgets)
         self.clear_display()
-        
+
         # Prikaži informacije
         series_name = self.current_media_details.get("name", "TV Series")
         self["title"].setText(f"{series_name} - {season_num}x{episode_num:02d}")
         self["epg_title"].setText(f"{episode_name}")
-        
+
         # Duration
         if runtime:
             self["duration"].setText(f"Duration: {runtime} min")
         else:
             self["duration"].setText("Duration: N/A")
-            
+
         # Rating
         if rating:
             self["rating"].setText(f"Rating: {rating:.1f}/10 ★")
         else:
             self["rating"].setText("Rating: N/A")
-            
+
         # Air date
-        if air_date:
+        if air_date and len(air_date) >= 10:
             pretty_date = f"{air_date[8:10]}.{air_date[5:7]}.{air_date[:4]}"
             self["imdb_rating"].setText(f"Aired: {pretty_date}")
         else:
             self["imdb_rating"].setText("Aired: N/A")
-            
+
         # Genres - prazno za epizodu
         self["genres"].setText("")
-        
-        # Director - pokušaj da pronađeš režisera
+
+        # Director - pokušaj da pronađeš režisera epizode
         crew = episode_data.get("crew", [])
-        directors = [c["name"] for c in crew if c.get("job") == "Director"]
+        director_objs = [c for c in crew if c.get("job") == "Director"]
+        directors = [c["name"] for c in director_objs]
         if directors:
-            self["director"].setText(f"Director: {', '.join(directors)}")
+            self["director"].setText(f"Director: {', '.join(directors[:3])}")
+            primary_director = director_objs[0]
         else:
             self["director"].setText("")
-            
+            primary_director = None
+
         # Plot
         if len(overview) > 500:
             overview = overview[:500] + "..."
         self["plot"].setText("Plot:\n" + overview)
-        
-        # Cast - pokušaj da prikažeš glumce za ovu epizodu
-        guest_stars = episode_data.get("guest_stars", [])[:6]  # Prvih 6 gostujućih glumaca
-        cast_text = "Guest Stars:\n"
-        if guest_stars:
-            for star in guest_stars:
-                char = star.get("character", "").strip()
-                name = star.get("name", "").strip()
-                if char:
-                    cast_text += f"• {name} as {char}\n"
-                else:
-                    cast_text += f"• {name}\n"
-        else:
-            cast_text += "No guest stars info"
-        self["cast"].setText(cast_text)
-        
+
+        # Guest Stars (maksimalno 5 za 5 slotova) + režiser epizode
+        guest_stars = episode_data.get("guest_stars", [])[:5]
+        self._populate_cast_and_director_posters(guest_stars, primary_director, "Director: ")
+
         # Download still slike ako postoji
         still_path = episode_data.get("still_path")
         if still_path:
-            # Koristimo postojeću funkciju za download, ali sa drugim prefiksom
-            download_poster_async(still_path, f"{tv_id}_s{season_num}e{episode_num}", "tv", self.episode_still_downloaded)
+            download_poster_async(still_path, f"{tv_id}_s{season_num}e{episode_num}", "tv",
+                                  self.episode_still_downloaded)
         else:
             self._show_placeholder()
-            
+
         self["status"].setText(f"Episode {season_num}x{episode_num:02d} loaded")
 
     def episode_still_downloaded(self, path):
@@ -1907,6 +1951,7 @@ class CiefpTMDBMain(Screen):
             self["imdb_rating"].setText("IMDB: Error")
 
     def display_media_info(self, details, media_type, epg_title=""):
+        self._clear_person_related_posters()
         if not details:
             self["status"].setText("No details from TMDB")
             return
@@ -1946,26 +1991,35 @@ class CiefpTMDBMain(Screen):
         genres = ", ".join([g["name"] for g in details.get("genres", [])]) or "N/A"
         self["genres"].setText(f"Genres: {genres}")
 
-        # DIRECTOR/CREATOR
+        # DIRECTOR/CREATOR #CAST LIST
         credits = details.get("credits", {})
         crew = credits.get("crew", [])
-        directors = [c["name"] for c in crew if c["job"] == "Director"]
-        creators = [c["name"] for c in crew if c["known_for_department"] == "Creator"] if media_type == "tv" else []
-        dir_text = "Director: " + ", ".join(directors) if directors else (
-            "Created by: " + ", ".join(creators) if creators else "N/A")
-        self["director"].setText(dir_text)
+        director_objs = [c for c in crew if c.get("job") == "Director"]
+        directors = [c["name"] for c in director_objs]
+        creators = details.get("created_by", []) if media_type == "tv" else []
+        creator_names = [c["name"] for c in creators]
+
+        if media_type == "tv" and creator_names:
+            self["director"].setText("Created by: " + ", ".join(creator_names[:3]))
+            primary_director = creators[0]
+            director_role = "Creator:"
+        elif directors:
+            self["director"].setText("Director: " + ", ".join(directors[:3]))
+            primary_director = director_objs[0]
+            director_role = "Director: "
+        else:
+            self["director"].setText("N/A")
+            primary_director = None
+            director_role = "Director: "
+
+        cast_list = credits.get("cast", [])[:5]
+        self._populate_cast_and_director_posters(cast_list, primary_director, director_role)
 
         # PLOT - ograniči dužinu
         overview = details.get("overview", "") or "No description available."
         if len(overview) > 500:
             overview = overview[:500] + "..."
         self["plot"].setText("Plot:\n" + overview)
-
-        # CAST - ograniči broj glumaca
-        cast_list = credits.get("cast", [])[:6]  # Samo 6 glumca
-        cast_text = "Cast:\n" + ("\n".join(
-            [f"• {a['name']} as {a.get('character', '')}" for a in cast_list]) if cast_list else "No cast info")
-        self["cast"].setText(cast_text)
 
         # POSTER I BACKDROP
         poster_path = details.get("poster_path")
@@ -2165,6 +2219,86 @@ class CiefpTMDBMain(Screen):
         if placeholder:
             self["poster"].instance.setPixmap(placeholder)
         self["poster"].show()
+
+    def _clear_cast_and_director_widgets(self):
+        """Sakrije i očisti widgete za 5 glumaca i režisera."""
+        for i in range(5):
+            if f"cast_img_{i}" in self:
+                self[f"cast_img_{i}"].hide()
+            if f"cast_name_{i}" in self:
+                self[f"cast_name_{i}"].setText("")
+        if "director_img" in self:
+            self["director_img"].hide()
+        if "director_label" in self:
+            self["director_label"].setText("")
+        if "director_name" in self:
+            self["director_name"].setText("")
+
+    def _set_slot_placeholder(self, widget_name):
+        """Postavlja placeholder sliku na zadati Pixmap widget."""
+        if widget_name not in self:
+            return
+        px = load_pixmap_safe(PLACEHOLDER)
+        if px and self[widget_name].instance:
+            try:
+                self[widget_name].instance.setPixmap(px)
+                self[widget_name].show()
+            except Exception:
+                pass
+
+    def _download_person_thumb_async(self, profile_path, widget_name):
+        """Asinhrono preuzima sliku glumca/režisera i prikazuje je na widgetu."""
+        if not profile_path or not config.plugins.ciefptmdb.cache_enabled.value:
+            self._set_slot_placeholder(widget_name)
+            return
+
+        def worker():
+            try:
+                folder = ensure_cache_folder()
+                fname = os.path.join(folder, f"cast_{os.path.basename(profile_path)}")
+                if not os.path.exists(fname):
+                    url = "https://image.tmdb.org/t/p/w185" + profile_path
+                    ctx = ssl.create_default_context()
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl.CERT_NONE
+                    data = urllib.request.urlopen(url, context=ctx, timeout=12).read()
+                    with open(fname, "wb") as f:
+                        f.write(data)
+
+                px = load_pixmap_safe(fname)
+                if px and widget_name in self and self[widget_name].instance:
+                    self[widget_name].instance.setPixmap(px)
+                    self[widget_name].show()
+            except Exception as e:
+                print(f"[TMDB] Cast/director image error: {e}")
+                self._set_slot_placeholder(widget_name)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _populate_cast_and_director_posters(self, cast_list, director_obj=None, director_role="Director:"):
+        """Popunjava 5 glumaca i režisera (ili kreatora) posterima i imenima."""
+        self._clear_cast_and_director_widgets()
+
+        for i in range(5):
+            if i < len(cast_list):
+                actor = cast_list[i]
+                name = actor.get("name", "")
+                profile_path = actor.get("profile_path")
+                self[f"cast_name_{i}"].setText(name)
+                if profile_path:
+                    self._download_person_thumb_async(profile_path, f"cast_img_{i}")
+                else:
+                    self._set_slot_placeholder(f"cast_img_{i}")
+
+        if director_obj:
+            d_name = director_obj.get("name", "")
+            d_path = director_obj.get("profile_path")
+            self["director_label"].setText(director_role)
+            self["director_name"].setText(d_name)
+            if d_path:
+                self._download_person_thumb_async(d_path, "director_img")
+            else:
+                self._set_slot_placeholder("director_img")
 
     def multi_search_with_fallback(self, title, year, api_key):
         """Najbolji mogući search – IDENTIČNO kao CiefpEPGinfo (uzima PRVI rezultat)"""
@@ -2943,6 +3077,129 @@ class CiefpTMDBMain(Screen):
         self.current_person_name = query
         self.display_person_info(match, api_key, person_type)
 
+    def _clear_person_related_posters(self):
+        """Sakrije 10 postera filmova vezanih za osobu i okvir selekcije."""
+        self.person_related_items = []
+        self.person_rel_index = 0
+        for i in range(10):
+            widget_name = f"person_rel_img_{i}"
+            if widget_name in self:
+                self[widget_name].hide()
+        if "person_rel_frame" in self:
+            self["person_rel_frame"].hide()
+
+    def _init_person_rel_frame(self):
+        """Učitava frame.png kada je layout gotov da instance sigurno postoji."""
+        if self.frame_pixmap is None:
+            frame_path = os.path.join(PLUGIN_DIR, "frame.png")
+            if os.path.exists(frame_path):
+                self.frame_pixmap = load_pixmap_safe(frame_path)
+            else:
+                print(f"[TMDB] frame.png not found at: {frame_path}")
+
+        if self.frame_pixmap and "person_rel_frame" in self and self["person_rel_frame"].instance:
+            try:
+                self["person_rel_frame"].instance.setPixmap(self.frame_pixmap)
+                try:
+                    self["person_rel_frame"].instance.setScale(1)
+                except Exception:
+                    pass
+            except Exception as e:
+                print(f"[TMDB] setPixmap frame error: {e}")
+
+    def _update_person_rel_frame_pos(self):
+        """Pomera frame.png na selektovani poster i prikazuje naziv filma u status3."""
+        if not self.person_related_items:
+            if "person_rel_frame" in self:
+                self["person_rel_frame"].hide()
+            return
+
+        self._init_person_rel_frame()
+
+        idx = max(0, min(self.person_rel_index, len(self.person_related_items) - 1))
+        self.person_rel_index = idx
+        x = self._person_rel_x_positions[idx]
+        y = 740
+
+        if "person_rel_frame" in self and self["person_rel_frame"].instance:
+            try:
+                self["person_rel_frame"].instance.move(ePoint(x - 8, y - 8))
+                self["person_rel_frame"].instance.show()
+                self["person_rel_frame"].show()
+            except Exception as e:
+                print(f"[TMDB] move frame error: {e}")
+
+        movie = self.person_related_items[idx]
+        title = movie.get("title") or movie.get("name", "Unknown")
+        year = (movie.get("release_date") or "")[:4]
+        label_txt = f"{title} ({year})" if year else title
+        self["status3"].setText(f"OK: {label_txt}")
+
+    def _set_person_rel_slot_image(self, slot_idx, img_path):
+        """Postavlja keširanu sliku ili placeholder na slot 0..9."""
+        widget_name = f"person_rel_img_{slot_idx}"
+        if widget_name not in self:
+            return
+        px = load_pixmap_safe(img_path) or load_pixmap_safe(PLACEHOLDER)
+        if px and self[widget_name].instance:
+            try:
+                self[widget_name].instance.setPixmap(px)
+                self[widget_name].show()
+            except Exception:
+                pass
+
+    def _populate_person_related_posters(self, movies):
+        """Popunjava do 10 postera najpopularnijih filmova za profil osobe."""
+        self._clear_person_related_posters()
+        selected_movies = (movies or [])[:10]
+        if not selected_movies:
+            return
+
+        self.person_related_items = selected_movies
+        self.person_rel_index = 0
+
+        for idx, movie in enumerate(selected_movies):
+            poster_path = movie.get("poster_path")
+            movie_id = movie.get("id")
+            if not poster_path or not movie_id:
+                self._set_person_rel_slot_image(idx, PLACEHOLDER)
+                continue
+
+            folder = ensure_cache_folder()
+            fname = os.path.join(folder, f"rel_movie_{movie_id}_{os.path.basename(poster_path)}")
+
+            if os.path.exists(fname):
+                self._set_person_rel_slot_image(idx, fname)
+            else:
+                self._set_person_rel_slot_image(idx, PLACEHOLDER)
+
+                def _download_rel(p_path=poster_path, target_file=fname, s_idx=idx):
+                    try:
+                        url = "https://image.tmdb.org/t/p/w185" + p_path
+                        ctx = ssl.create_default_context()
+                        ctx.check_hostname = False
+                        ctx.verify_mode = ssl.CERT_NONE
+                        data = urllib.request.urlopen(url, context=ctx, timeout=10).read()
+                        with open(target_file, "wb") as f:
+                            f.write(data)
+                        self._set_person_rel_slot_image(s_idx, target_file)
+                    except Exception as e:
+                        print(f"[TMDB] Person related poster error: {e}")
+
+                threading.Thread(target=_download_rel, daemon=True).start()
+
+        self._update_person_rel_frame_pos()
+
+    def keyLeft(self):
+        if self.current_person_details and self.person_related_items:
+            self.person_rel_index = (self.person_rel_index - 1) % len(self.person_related_items)
+            self._update_person_rel_frame_pos()
+
+    def keyRight(self):
+        if self.current_person_details and self.person_related_items:
+            self.person_rel_index = (self.person_rel_index + 1) % len(self.person_related_items)
+            self._update_person_rel_frame_pos()
+
     def display_person_info(self, person_data, api_key, person_type):
         """Prikazuje informacije o glumcu/direktoru sa korisnim informacijama"""
         person_id = person_data.get("id")
@@ -2954,7 +3211,10 @@ class CiefpTMDBMain(Screen):
 
         self.current_person_details = details
         self.current_person_name = details.get("name", "Unknown")
-        
+
+        # Sakrij postere glumaca i režisera sa prethodnog filma/serije
+        self._clear_cast_and_director_widgets()
+
         name = details.get("name", "N/A")
         known_for = details.get("known_for_department", "N/A")
         birthday = details.get("birthday", "N/A")
@@ -2973,13 +3233,13 @@ class CiefpTMDBMain(Screen):
         tv_count = len(details.get("tv_credits", {}).get("cast", []))
 
         career_info = ""
-        if birthday:
+        if birthday and len(birthday) >= 4:
             try:
                 birth_year = int(birthday[:4])
-                current_year = 2024
+                current_year = 2026
                 career_years = current_year - birth_year
                 career_info = f"{career_years}+ years"
-            except:
+            except Exception:
                 pass
 
         filmography_info = f"{movie_count} movies"
@@ -2999,52 +3259,25 @@ class CiefpTMDBMain(Screen):
             biography = biography[:400] + "..."
         self["plot"].setText(f"Biography:\n{biography}")
 
-        movie_credits = details.get("movie_credits", {}).get("cast", [])
-        tv_credits = details.get("tv_credits", {}).get("cast", [])
-
-        def get_movie_score(movie):
-            popularity = movie.get('popularity', 0) or 0
-            vote_count = movie.get('vote_count', 0) or 0
-            return (vote_count * 10) + popularity
-
-        def get_tv_score(tv):
-            popularity = tv.get('popularity', 0) or 0
-            vote_count = tv.get('vote_count', 0) or 0
-            return (vote_count * 10) + popularity
-
-        movie_credits.sort(key=get_movie_score, reverse=True)
-        tv_credits.sort(key=get_tv_score, reverse=True)
-
-        top_movies = movie_credits[:4]
-        top_tv = tv_credits[:2]
-
-        filmography = "Known For:\n"
-        if top_movies:
-            filmography += "Movies:\n"
-            for movie in top_movies:
-                title = movie.get('title', 'N/A')
-                year = movie.get('release_date', '')[:4]
-                if title and title != 'N/A':
-                    filmography += f"• {title} ({year})\n"
-
-        if top_tv:
-            filmography += "TV Series:\n"
-            for tv in top_tv:
-                name = tv.get('name', 'N/A')
-                year = tv.get('first_air_date', '')[:4]
-                if name and name != 'N/A':
-                    filmography += f"• {name} ({year})\n"
-
-        if not top_movies and not top_tv:
-            filmography += "No notable works found"
-
-        self["cast"].setText(filmography)
-
         profile_path = details.get("profile_path")
         if profile_path:
             download_person_photo_async(profile_path, person_id, self.person_photo_downloaded)
         else:
             self._show_placeholder()
+
+        self.current_media_details = None
+        raw_movie_credits = details.get("movie_credits", {}).get("cast", [])
+
+        def _score_movie(movie):
+            popularity = movie.get("popularity", 0) or 0
+            vote_count = movie.get("vote_count", 0) or 0
+            return (vote_count * 10) + popularity
+
+        top_movies = [
+            m for m in sorted(raw_movie_credits, key=_score_movie, reverse=True)
+            if m.get("poster_path") and m.get("id")
+        ][:10]
+        self._populate_person_related_posters(top_movies)
 
         self["status"].setText(f"{person_type.capitalize()} info loaded")
 
@@ -3068,7 +3301,7 @@ class CiefpTMDBMain(Screen):
         self["genres"].setText("")
         self["director"].setText("")
         self["plot"].setText("")
-        self["cast"].setText("")
+        self._clear_cast_and_director_widgets()
         self["epg_title"].setText("")
 
     def show_person_filmography(self):
@@ -3192,24 +3425,30 @@ class CiefpTMDBMain(Screen):
         self.display_media_info(details, media_type, f"From: {person_name}")
 
     def show_main_cast(self):
-        """Prikazuje glavnu glumačku ekipu"""
-        if not hasattr(self, 'current_media_details'):
+        """Prikazuje glavnu glumačku ekipu (5 postera + režiser)"""
+        if not hasattr(self, 'current_media_details') or not self.current_media_details:
             self["status"].setText("No media details available")
             return
 
-        credits = self.current_media_details.get("credits", {})
-        cast = credits.get("cast", [])[:8]
+        details = self.current_media_details
+        media_type = getattr(self, 'current_media_type', "movie")
+        credits = details.get("credits", {})
+        crew = credits.get("crew", [])
+        director_objs = [c for c in crew if c.get("job") == "Director"]
+        creators = details.get("created_by", []) if media_type == "tv" else []
 
-        cast_text = "⭐ Main Cast:\n"
-        for i, person in enumerate(cast, 1):
-            character = person.get("character", "")
-            name = person.get("name", "")
-            cast_text += f"{i}. {name}"
-            if character:
-                cast_text += f" as {character}"
-            cast_text += "\n"
+        if media_type == "tv" and creators:
+            primary_director = creators[0]
+            director_role = "Creator:"
+        elif director_objs:
+            primary_director = director_objs[0]
+            director_role = "Director: "
+        else:
+            primary_director = None
+            director_role = "Director: "
 
-        self["cast"].setText(cast_text)
+        cast_list = credits.get("cast", [])[:5]
+        self._populate_cast_and_director_posters(cast_list, primary_director, director_role)
         self["status"].setText("Main cast displayed")
 
     def show_full_cast(self):
@@ -3276,6 +3515,14 @@ class CiefpTMDBMain(Screen):
         self["status"].setText("Actor profiles feature coming soon!")
 
     def toggle_backdrop_view(self):
+        if self.current_person_details and self.person_related_items:
+            chosen = self.person_related_items[self.person_rel_index]
+            m_id = chosen.get("id")
+            m_title = chosen.get("title") or chosen.get("name", "Unknown")
+            if m_id:
+                self.current_media_details = None
+                self.load_media_from_person_profile(m_id, "movie", m_title)
+            return
         """Otvara galeriju backdroпova umesto toggle-a"""
         if not self.current_media_details:
             self["status"].setText("No media loaded! Use Auto EPG or search first.")
@@ -3298,6 +3545,7 @@ class CiefpTMDBMain(Screen):
             self["status"].setText("Classic view")
 
     def show_only_backdrop(self):
+        self._clear_person_related_posters()
         """Prikaži samo backdrop sliku (sakrij sve tekstualne informacije)"""
         self["title"].hide()
         self["epg_title"].hide()
@@ -3307,7 +3555,12 @@ class CiefpTMDBMain(Screen):
         self["genres"].hide()
         self["director"].hide()
         self["plot"].hide()
-        self["cast"].hide()
+        for i in range(5):
+            self[f"cast_img_{i}"].hide()
+            self[f"cast_name_{i}"].hide()
+        self["director_label"].hide()
+        self["director_img"].hide()
+        self["director_name"].hide()
         self["status"].hide()
 
         self["poster"].show()
@@ -3330,7 +3583,14 @@ class CiefpTMDBMain(Screen):
         self["genres"].show()
         self["director"].show()
         self["plot"].show()
-        self["cast"].show()
+        for i in range(5):
+            self[f"cast_name_{i}"].show()
+            if self[f"cast_name_{i}"].getText():
+                self[f"cast_img_{i}"].show()
+        if self["director_name"].getText():
+            self["director_label"].show()
+            self["director_img"].show()
+            self["director_name"].show()
         self["status"].show()
 
         self["poster"].show()
@@ -3396,6 +3656,7 @@ class CiefpTMDBMain(Screen):
         self.display_media_info(details, media_type)
 
     def _display_media_details(self, match, media_type, api_key, epg_info=None):
+        self._clear_person_related_posters()
         details = _get_media_details(self.media_id, self.media_type, api_key)
         if not details:
             self["status"].setText("Error fetching details")
@@ -3443,42 +3704,29 @@ class CiefpTMDBMain(Screen):
             self["genres"].setText("Genres: N/A")
 
         credits = details.get("credits", {})
+        crew = credits.get("crew", [])
+        director_objs = [c for c in crew if c.get("job") == "Director"]
+        creators = details.get("created_by", []) if media_type == "tv" else []
+
         if media_type == "movie":
-            directors = [c["name"] for c in credits.get("crew", []) if c["job"] == "Director"]
+            directors = [c["name"] for c in director_objs]
             if directors:
                 self["director"].setText(f"Director: {', '.join(directors[:2])}")
             else:
                 self["director"].setText("Director: N/A")
+            primary_director = director_objs[0] if director_objs else None
+            director_role = "Director: "
         else:
-            creators = [c["name"] for c in details.get("created_by", [])]
-            if creators:
-                self["director"].setText(f"Created by: {', '.join(creators[:2])}")
+            creator_names = [c["name"] for c in creators]
+            if creator_names:
+                self["director"].setText(f"Created by: {', '.join(creator_names[:2])}")
             else:
                 self["director"].setText("Creator: N/A")
+            primary_director = creators[0] if creators else None
+            director_role = "Creator:"
 
-        overview = details.get("overview", "").strip()
-        if overview:
-            overview = overview.replace("\r\n", " ").replace("\n", " ")
-            if len(overview) > 500:
-                overview = overview[:500].rsplit(" ", 1)[0] + " ..."
-            self["plot"].setText("Plot:\n" + overview)
-        else:
-            self["plot"].setText("Plot:\nNo description available.")
-
-        cast = credits.get("cast", [])[:6]
-        cast_text = "Cast:\n"
-        if cast:
-            for person in cast:
-                char = person.get("character", "").strip()
-                name = person.get("name", "").strip()
-                if char:
-                    cast_text += f"• {name} as {char}\n"
-                else:
-                    cast_text += f"• {name}\n"
-        else:
-            cast_text += "No cast information"
-
-        self["cast"].setText(cast_text)
+        cast_list = credits.get("cast", [])[:5]
+        self._populate_cast_and_director_posters(cast_list, primary_director, director_role)
 
         if self.poster_path and config.plugins.ciefptmdb.cache_enabled.value:
             self["status"].setText("Downloading poster...")
@@ -3522,6 +3770,7 @@ class CiefpTMDBMain(Screen):
         self.show_classic_view()
 
     def clear_all_and_reset(self):
+        self._clear_person_related_posters()
         """Resetuje prikaz na početno stanje"""
         self.clear_display()
         self._show_placeholder()
