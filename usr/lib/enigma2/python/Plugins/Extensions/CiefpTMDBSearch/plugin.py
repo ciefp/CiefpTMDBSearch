@@ -82,7 +82,7 @@ config.plugins.ciefptmdb.show_imdb_rating = ConfigYesNo(default=True)  # DODAJEM
 # plugin dir and files
 PLUGIN_NAME = "CiefpTMDBSearch"
 PLUGIN_DESC = "TMDB search with Popular, Trending and Top Rated sections"
-PLUGIN_VERSION = "2.9"
+PLUGIN_VERSION = "3.0"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else "/usr/lib/enigma2/python/Plugins/Extensions/CiefpTMDBSearch"
 API_KEY_FILE = os.path.join(PLUGIN_DIR, "tmdbapikey.txt")
 OMDB_API_KEY_FILE = os.path.join(PLUGIN_DIR, "omdbapikey.txt")  # DODAJEMO OMDb API fajl
@@ -2483,7 +2483,7 @@ class CiefpTMDBMain(Screen):
             display_text = f"[Mov] {title} ({year}) {stars}"
             if rating > 0:
                 display_text += f" {rating:.1f}"
-            menu_list.append((display_text, movie, "movie"))
+            menu_list.append((display_text, movie, movie.get("poster_path"), "movie"))
 
         def selected_callback(choice):
             if choice:
@@ -2495,7 +2495,7 @@ class CiefpTMDBMain(Screen):
                 if details:
                     self.display_media_info(details, "movie")
 
-        self.session.openWithCallback(selected_callback, ChoiceBox,
+        self.session.openWithCallback(selected_callback, CiefpChoiceScreen,
                                       title=f"Popular Movies - {len(movies)} results",
                                       list=menu_list)
 
@@ -2537,7 +2537,7 @@ class CiefpTMDBMain(Screen):
             display_text = f"[Ser] {name} ({year}) {stars}"
             if rating > 0:
                 display_text += f" {rating:.1f}"
-            menu_list.append((display_text, tv, "tv"))
+            menu_list.append((display_text, tv, tv.get("poster_path"), "tv"))
 
         def selected_callback(choice):
             if choice:
@@ -2549,7 +2549,7 @@ class CiefpTMDBMain(Screen):
                 if details:
                     self.display_media_info(details, "tv")
 
-        self.session.openWithCallback(selected_callback, ChoiceBox,
+        self.session.openWithCallback(selected_callback, CiefpChoiceScreen,
                                       title=f"Popular Series - {len(series)} results",
                                       list=menu_list)
 
@@ -2601,7 +2601,7 @@ class CiefpTMDBMain(Screen):
             if rating > 0:
                 display_text += f" {rating:.1f}"
 
-            menu_list.append((display_text, movie, "movie"))
+            menu_list.append((display_text, movie, movie.get("poster_path"), "movie"))
 
         def selected_callback(choice):
             if choice:
@@ -2613,7 +2613,7 @@ class CiefpTMDBMain(Screen):
                 if details:
                     self.display_media_info(details, "movie")
 
-        self.session.openWithCallback(selected_callback, ChoiceBox,
+        self.session.openWithCallback(selected_callback, CiefpChoiceScreen,
                                       title=f"Upcoming Movies - {len(movies)} results",
                                       list=menu_list)
 
@@ -2683,9 +2683,10 @@ class CiefpTMDBMain(Screen):
                 if details:
                     self.display_person_info(details, api_key, person_type)
 
-        self.session.openWithCallback(selected_callback, ChoiceBox,
+        self.session.openWithCallback(selected_callback, CiefpChoiceScreen,
                                       title=f"Popular Persons - {len(persons)} results",
                                       list=menu_list)
+
 
     def search_trending_all(self):
         """Prikazuje 20 trending naslova/osoba dnevno (mješovito)"""
@@ -2742,7 +2743,8 @@ class CiefpTMDBMain(Screen):
                 if rating > 0:
                     display_text += f" {rating:.1f}"
 
-            menu_list.append((display_text, item, media_type))
+            img_p = item.get("profile_path") if media_type == "person" else item.get("poster_path")
+            menu_list.append((display_text, item, img_p, media_type))
 
         def selected_callback(choice):
             if choice:
@@ -2763,9 +2765,10 @@ class CiefpTMDBMain(Screen):
                     if details:
                         self.display_media_info(details, m_type)
 
-        self.session.openWithCallback(selected_callback, ChoiceBox,
+        self.session.openWithCallback(selected_callback, CiefpChoiceScreen,
                                       title="Trending All - Daily (TMDB)",
                                       list=menu_list)
+
 
     def search_top_rated_movies(self):
         """Prikazuje 40 najbolje ocenjenih filmova"""
@@ -2801,7 +2804,7 @@ class CiefpTMDBMain(Screen):
                 stars = "★★☆☆☆"
 
             display_text = f"[Mov] {title} ({year}) {stars} {rating:.1f}"
-            menu_list.append((display_text, movie, "movie"))
+            menu_list.append((display_text, movie, movie.get("poster_path"), "movie"))
 
         def selected_callback(choice):
             if choice:
@@ -2813,7 +2816,7 @@ class CiefpTMDBMain(Screen):
                 if details:
                     self.display_media_info(details, "movie")
 
-        self.session.openWithCallback(selected_callback, ChoiceBox,
+        self.session.openWithCallback(selected_callback, CiefpChoiceScreen,
                                       title=f"Top Rated Movies - {len(movies)} results",
                                       list=menu_list)
 
@@ -2851,7 +2854,7 @@ class CiefpTMDBMain(Screen):
                 stars = "★★☆☆☆"
 
             display_text = f"[Ser] {name} ({year}) {stars} {rating:.1f}"
-            menu_list.append((display_text, tv, "tv"))
+            menu_list.append((display_text, tv, tv.get("poster_path"), "tv"))
 
         def selected_callback(choice):
             if choice:
@@ -2863,9 +2866,10 @@ class CiefpTMDBMain(Screen):
                 if details:
                     self.display_media_info(details, "tv")
 
-        self.session.openWithCallback(selected_callback, ChoiceBox,
+        self.session.openWithCallback(selected_callback, CiefpChoiceScreen,
                                       title=f"Top Rated Series - {len(series)} results",
                                       list=menu_list)
+
 
     def search_now_playing_movies(self):
         """Prikazuje 40 filmova koji se trenutno prikazuju u bioskopima"""
@@ -2914,7 +2918,7 @@ class CiefpTMDBMain(Screen):
             if rating > 0:
                 display_text += f" {rating:.1f}"
 
-            menu_list.append((display_text, movie, "movie"))
+            menu_list.append((display_text, movie, movie.get("poster_path"), "movie"))
 
         def selected_callback(choice):
             if choice:
@@ -2926,7 +2930,7 @@ class CiefpTMDBMain(Screen):
                 if details:
                     self.display_media_info(details, "movie")
 
-        self.session.openWithCallback(selected_callback, ChoiceBox,
+        self.session.openWithCallback(selected_callback, CiefpChoiceScreen,
                                       title=f"Now Playing Movies - {len(movies)} results",
                                       list=menu_list)
 
@@ -2977,7 +2981,7 @@ class CiefpTMDBMain(Screen):
             if rating > 0:
                 display_text += f" {rating:.1f}"
 
-            menu_list.append((display_text, tv, "tv"))
+            menu_list.append((display_text, tv, tv.get("poster_path"), "tv"))
 
         def selected_callback(choice):
             if choice:
@@ -2989,7 +2993,7 @@ class CiefpTMDBMain(Screen):
                 if details:
                     self.display_media_info(details, "tv")
 
-        self.session.openWithCallback(selected_callback, ChoiceBox,
+        self.session.openWithCallback(selected_callback, CiefpChoiceScreen,
                                       title=f"TV Series On The Air - {len(series)} results",
                                       list=menu_list)
 
@@ -3052,7 +3056,7 @@ class CiefpTMDBMain(Screen):
                 if details:
                     self.display_media_info(details, "tv")
 
-        self.session.openWithCallback(selected_callback, ChoiceBox,
+        self.session.openWithCallback(selected_callback, CiefpChoiceScreen,
                                       title=f"TV Series Airing Today - {len(series)} results",
                                       list=menu_list)
 

@@ -66,13 +66,13 @@ class CiefpChoiceScreen(Screen):
             <widget name="title" position="50,35" size="1200,55" font="Regular;38" foregroundColor="yellow" backgroundColor="#011a2e" transparent="1" />
 
             <!-- Lista sa leve strane -->
-            <widget name="list" position="50,110" size="1200,840" scrollbarMode="showOnDemand" itemHeight="48" font="Regular;28" foregroundColor="white" backgroundColor="#011a2e" />
+            <widget name="list" position="50,110" size="1200,840" scrollbarMode="showOnDemand" itemHeight="40" font="Regular;28" foregroundColor="white" backgroundColor="#011a2e" />
 
             <!-- Poster selektovane stavke sa desne strane (500x750) -->
             <widget name="poster" position="1320,110" size="500,750" alphatest="blend" zPosition="2" />
 
             <!-- Status / brojač stavki -->
-            <widget name="status" position="50,995" size="1100,45" font="Regular;26" foregroundColor="#00FF00" backgroundColor="#011a2e" halign="left" valign="center" transparent="1" />
+            <widget name="status" position="50,995" size="1230,45" font="Regular;26" foregroundColor="#00FF00" backgroundColor="#011a2e" halign="left" valign="center" transparent="1" />
             <widget name="counter" position="1320,880" size="500,45" font="Regular;26" foregroundColor="#D3D3D3" backgroundColor="#011a2e" halign="center" valign="center" transparent="1" />
 
             <!-- Donja dugmad -->
@@ -123,32 +123,53 @@ class CiefpChoiceScreen(Screen):
                 label = entry.get("label", "")
                 payload = entry.get("payload")
                 image_path = entry.get("image_path") or entry.get("poster_path") or entry.get("profile_path")
-                media_type = entry.get("media_type", "movie")
+                media_type = entry.get("media_type")
             elif isinstance(entry, (tuple, list)):
                 label = entry[0] if len(entry) > 0 else ""
                 payload = entry[1] if len(entry) > 1 else None
-                image_path = entry[2] if len(entry) > 2 else None
-                media_type = entry[3] if len(entry) > 3 else "movie"
+                third = entry[2] if len(entry) > 2 else None
+                fourth = entry[3] if len(entry) > 3 else None
+
+                if len(entry) == 3 and third in ("movie", "tv", "person"):
+                    image_path = None
+                    media_type = third
+                else:
+                    image_path = third
+                    media_type = fourth
             else:
                 label = str(entry)
                 payload = entry
                 image_path = None
-                media_type = "movie"
+                media_type = None
 
-            # Ako image_path nije eksplicitno prosleđen, pokušaj iz payload-a
             if not image_path and isinstance(payload, dict):
                 image_path = payload.get("poster_path") or payload.get("profile_path")
-                if not media_type or media_type == "movie":
-                    if payload.get("profile_path") and not payload.get("poster_path"):
+
+            if not media_type:
+                if isinstance(payload, dict):
+                    if payload.get("media_type") in ("movie", "tv", "person"):
+                        media_type = payload.get("media_type")
+                    elif payload.get("profile_path") and not payload.get("poster_path"):
                         media_type = "person"
-                    elif payload.get("first_air_date") and not payload.get("release_date"):
+                    elif payload.get("first_air_date") or (payload.get("name") and not payload.get("title")):
                         media_type = "tv"
+                    else:
+                        media_type = "movie"
+                else:
+                    media_type = "movie"
+
+            if isinstance(image_path, str):
+                image_path = image_path.strip()
+                if image_path.lower() in ("", "none", "null"):
+                    image_path = None
+                elif not image_path.startswith(("http://", "https://", "/")):
+                    image_path = "/" + image_path
 
             normalized.append({
                 "label": label,
                 "payload": payload,
                 "image_path": image_path,
-                "media_type": media_type or "movie",
+                "media_type": media_type,
             })
         return normalized
 
@@ -229,20 +250,34 @@ class CiefpChoiceScreen(Screen):
 
         def _download_worker(req_token=current_token, img_rel=image_path, m_type=media_type, target=local_path):
             try:
-                size_seg = "h632" if m_type == "person" else "w500"
-                url = f"https://image.tmdb.org/t/p/{size_seg}{img_rel}"
+                if img_rel.startswith(("http://", "https://")):
+                    url = img_rel
+                else:
+                    size_seg = "h632" if m_type == "person" else "w500"
+                    url = f"https://image.tmdb.org/t/p/{size_seg}{img_rel}"
+
                 ctx = ssl.create_default_context()
                 ctx.check_hostname = False
                 ctx.verify_mode = ssl.CERT_NONE
                 data = urllib.request.urlopen(url, context=ctx, timeout=8).read()
+                if not data:
+                    raise ValueError("Empty image response")
+
                 with open(target, "wb") as f:
                     f.write(data)
+
                 if req_token == self._request_token:
                     self._set_poster_file(target)
             except Exception as e:
-                print(f"[CiefpChoiceScreen] Image download error: {e}")
+                if os.path.exists(target):
+                    try:
+                        os.remove(target)
+                    except Exception:
+                        pass
+                print(f"[CiefpChoiceScreen] Image download error ({url}): {e}")
                 if req_token == self._request_token:
                     self._show_placeholder()
+
 
         threading.Thread(target=_download_worker, daemon=True).start()
 
