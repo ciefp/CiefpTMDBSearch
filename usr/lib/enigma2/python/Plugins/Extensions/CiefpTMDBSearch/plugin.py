@@ -27,6 +27,7 @@ from Screens.MessageBox import MessageBox
 from Screens.ChoiceBox import ChoiceBox
 from enigma import eTimer, eServiceCenter, iServiceInformation, eEPGCache, eConsoleAppContainer, eSize, ePoint
 from Tools.LoadPixmap import LoadPixmap
+from .choice import CiefpChoiceScreen
 
 # ---------- CONFIG ----------
 config.plugins.ciefptmdb = ConfigSubsection()
@@ -81,7 +82,7 @@ config.plugins.ciefptmdb.show_imdb_rating = ConfigYesNo(default=True)  # DODAJEM
 # plugin dir and files
 PLUGIN_NAME = "CiefpTMDBSearch"
 PLUGIN_DESC = "TMDB search with Popular, Trending and Top Rated sections"
-PLUGIN_VERSION = "2.8"
+PLUGIN_VERSION = "2.9"
 PLUGIN_DIR = os.path.dirname(__file__) if '__file__' in globals() else "/usr/lib/enigma2/python/Plugins/Extensions/CiefpTMDBSearch"
 API_KEY_FILE = os.path.join(PLUGIN_DIR, "tmdbapikey.txt")
 OMDB_API_KEY_FILE = os.path.join(PLUGIN_DIR, "omdbapikey.txt")  # DODAJEMO OMDb API fajl
@@ -3350,10 +3351,11 @@ class CiefpTMDBMain(Screen):
                 else:
                     stars = "☆☆☆☆☆"
 
+                poster_p = movie.get("poster_path")
                 if rating > 0:
-                    menu_list.append((f"[Mov] {title} ({year}) {stars} {rating:.1f}", movie))
+                    menu_list.append((f"[Mov] {title} ({year}) {stars} {rating:.1f}", movie, poster_p, "movie"))
                 else:
-                    menu_list.append((f"[Mov] {title} ({year})", movie))
+                    menu_list.append((f"[Mov] {title} ({year})", movie, poster_p, "movie"))
 
         for tv in tv_credits[:10]:
             name = tv.get('name', 'N/A')
@@ -3374,10 +3376,11 @@ class CiefpTMDBMain(Screen):
                 else:
                     stars = "☆☆☆☆☆"
 
+                poster_p = tv.get("poster_path")
                 if rating > 0:
-                    menu_list.append((f"[Ser] {name} ({year}) {stars} {rating:.1f}", tv))
+                    menu_list.append((f"[Ser] {name} ({year}) {stars} {rating:.1f}", tv, poster_p, "tv"))
                 else:
-                    menu_list.append((f"[Ser] {name} ({year})", tv))
+                    menu_list.append((f"[Ser] {name} ({year})", tv, poster_p, "tv"))
 
         if not menu_list:
             self["status"].setText("No filmography available")
@@ -3396,7 +3399,7 @@ class CiefpTMDBMain(Screen):
                 else:
                     self["status"].setText("Error loading media details")
 
-        self.session.openWithCallback(media_selected, ChoiceBox,
+        self.session.openWithCallback(media_selected, CiefpChoiceScreen,
                                       title=f"Filmography: {person_name}",
                                       list=menu_list)
 
@@ -3472,11 +3475,10 @@ class CiefpTMDBMain(Screen):
         directors = [person for person in crew if person.get("job") == "Director"]
 
         menu_list = []
-
         if directors:
             for director in directors[:2]:  # Maksimum 2 režisera
                 name = director.get("name", "Unknown")
-                menu_list.append((f"🎬 Director: {name}", director))
+                menu_list.append((f"🎬 Director: {name}", director, director.get("profile_path"), "person"))
 
         # PROMENA OVDE: Povećano sa 4 na 15 glumaca
         main_cast = cast[:15]  # PROMENJENO SA 4 NA 15
@@ -3486,8 +3488,9 @@ class CiefpTMDBMain(Screen):
             if character and len(character) > 25:  # Povećano sa 20 na 25 karaktera
                 character = character[:25] + "..."
 
+
             # Numeracija glumaca
-            menu_list.append((f"{i + 1}. {name} ({character})", actor))
+            menu_list.append((f"{i + 1}. {name} ({character})", actor, actor.get("profile_path"), "person"))
 
         if not menu_list:
             self["status"].setText("No cast/director info available")
@@ -3506,7 +3509,7 @@ class CiefpTMDBMain(Screen):
                     self["status"].setText("No name found for selected person")
 
         title = self.current_media_details.get("title") or self.current_media_details.get("name", "Current Media")
-        self.session.openWithCallback(person_selected, ChoiceBox,
+        self.session.openWithCallback(person_selected, CiefpChoiceScreen,
                                       title=f"Cast & Crew: {title} ({len(cast)} total)",
                                       list=menu_list)
 
